@@ -1,0 +1,71 @@
+# ESP8266 bus listener PoC (phase 1). `just` lists the recipes.
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+py := "python3"
+port := env_var_or_default("PORT", "/dev/ttyUSB0")
+
+# list recipes
+default:
+    @just --list
+
+# check for PlatformIO and fetch the platform
+setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    main() {
+        if ! command -v pio >/dev/null; then
+            echo "pio not found. Install: uv tool install platformio  (or: pipx install platformio)" >&2
+            exit 1
+        fi
+        pio --version
+        pio pkg install -p espressif8266
+    }
+    main
+
+# compile the firmware for the NodeMCU
+build:
+    pio run -e nodemcuv2
+
+# flash the board
+flash:
+    pio run -e nodemcuv2 -t upload --upload-port {{port}}
+
+# serial monitor (type `v` to toggle full output)
+monitor:
+    pio device monitor -p {{port}} -b 115200
+
+# log the board output to logs/<timestamp>.log (stop with Ctrl-C)
+log:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    main() {
+        local out="logs/board_$(date +%Y%m%d_%H%M%S).log"
+        echo "logging to $out"
+        stty -F "{{port}}" 115200 raw -echo
+        # the board starts in filtered mode: send `v` once to get full output for compare.py
+        cat "{{port}}" | tee "$out"
+    }
+    main
+
+# host unit tests of the protocol core
+test:
+    pio test -e native
+
+# regenerate test/test_core/vectors.h from ../csv/*_hex.csv
+vectors:
+    {{py}} tools/make_vectors.py
+
+# compare a board log with a Logic 2 hex export, e.g. `just compare logs/a.log logs/a.csv`
+compare log csv:
+    {{py}} tools/compare.py {{log}} {{csv}}
+
+# tests of the tools (compare.py)
+test-tools:
+    {{py}} -m pytest -q tools
+
+# remove build output
+clean:
+    pio run -t clean || true
+    rm -rf .pio
+    find . -name __pycache__ -type d -prune -exec rm -rf {} +

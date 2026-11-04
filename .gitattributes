@@ -1,0 +1,10 @@
+# Logic 2 / Logic 1 captures and exports: binary, no text diffs
+*.sal         binary
+*.logicdata   binary
+*.saleae      binary
+*.vcd         binary
+*.bin         binary
+# Decoded byte exports stay diffable text
+*.csv         text eol=lf
+*.jpg binary
+*.png binary

@@ -1,0 +1,17 @@
+/target/
+.DS_Store
+*.swp
+freezer-bootup-fullduration.sal
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+.claude
+
+# anonymization: raw waveform contains WiFi name/serials; XCF keeps unblurred layers; unreviewed phone photos
+**/freezer-bootup-fullduration.csv
+*.xcf
+docs/smart-box-images/signal-*
+.pio/
+.pio.*/

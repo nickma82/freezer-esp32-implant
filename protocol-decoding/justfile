@@ -1,0 +1,55 @@
+# Freezer SmartDevice <-> freezer MCU protocol analysis
+# Developer entrypoint: `just` lists the recipes.
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+py := "python3"
+
+# list recipes
+default:
+    @just --list
+
+# run all tests (unit tests + replay of the real captures)
+test:
+    {{py}} -m pytest -q tests
+
+# unit tests only (CRC, parser, generator), no capture files needed
+test-unit:
+    {{py}} -m pytest -q tests/test_crc.py tests/test_parser.py tests/test_generator.py
+
+# replay the real captures from csv/ and raw-captures/ through parser and generator
+test-captures:
+    {{py}} -m pytest -q tests/test_captures.py
+
+# verbose test run, one line per test (shows what the tests demonstrate)
+test-verbose:
+    {{py}} -m pytest -v tests
+
+# print the frames the generator produces (bytes after the break) and the line timing
+demo:
+    {{py}} src/demo.py
+
+# readable timeline of parameters/events for exported captures, e.g. `just timeline csv/door_alarm_on_hex.csv`
+timeline +files:
+    {{py}} src/timeline.py {{files}}
+
+# hex dump of the messages in one export, e.g. `just decode csv/superfrost_enable_hex.csv`
+decode file:
+    {{py}} src/frames.py {{file}}
+
+# bus roles: slot schedule, responder latency, dst/src per slot (see 05-bus-roles.md)
+slots +files="csv/*_hex.csv":
+    {{py}} src/slots.py {{files}}
+
+# clock fingerprint per sender from a raw-edge export: who sends the BREAK + slot byte (see 05-bus-roles.md)
+clocks file="raw-captures/digital.csv":
+    {{py}} src/clocks.py {{file}}
+
+# search the CRC parameters again (slow, ~1 min); the answer is CRC-16/XMODEM, see 02-commands.md
+crc-search:
+    {{py}} src/crcsearch.py
+
+# remove caches
+clean:
+    find . -name __pycache__ -type d -prune -exec rm -rf {} +
+    rm -rf .pytest_cache
