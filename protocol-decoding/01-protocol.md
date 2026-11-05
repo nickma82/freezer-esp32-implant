@@ -63,7 +63,7 @@ without a driver conflict, and why requests and replies appear on the same chann
 | `0C` | 142.5 ms | none (node absent) |
 | `7F`, `7E` | 2x / ~1x per 142.5 ms | none **[?]** |
 | `01` | 285 ms | `FF 01 30 00 02 00 00 5F 82` |
-| `02` (box) | **570 ms** | `FF 02 30 01 02 00 00 0B 3A` |
+| `02` (box) | **570 ms** | `FF 02 30 01 02 00 00 0B 3A`; in steady state it also re-reads its `08/14 ... 04/02` list every 2-3 s (door_open_close_nop30) |
 | `81`, `82` | on demand | freezer's reply to node `01` / `02`, one 285 ms step after the request |
 | `FF` | ~1 s | freezer broadcast (event block) |
 Service `30` = ack, or 'nothing to send' when the payload is `00 00`. Requests and replies are paired, reply = request + `0x10`
@@ -115,6 +115,35 @@ Nodes `01` and `02` seem to react to a set flag by reading the affected params. 
 | `58/07` | 1 | status byte pushed by node `0B` to the freezer: `11` normal, `01` while the door is open | **[hyp]** |
 | `10/00` | 2 | pushed by node `0B` to the freezer, rarely (4 times in all captures, always while node `0B` is in low-power mode): `4217`, `5617`, `2617`, `0A17`; low byte always `17` | **[?]** |
 | `0C/07`, `0C/2B`, `0C/10`, `0C/08`, `24/xx`, `58/xx` | | unknown (see 04) | **[?]** |
+| `08/04` | 4 | **seconds counter**, 32-bit **little endian**, +1 per second (`76 9C 6A 05` at 13.8 s, `8A 9C 6A 05` at 33.7 s, `9F 9C 6A 05` at 54.6 s) | bootup, door_open_alarm, door_open_close_nop30 **[ok]** |
+| `08/2A` | 4 | second seconds counter, little endian, +1 per second, other start value (`E6 56 39 08` at 14.4 s) | same 3 captures **[ok]**, meaning **[?]** |
+| `08/20` | 2 | drifts slowly, high byte `16`, low byte `BA` → `D6`, `F5`, `8C`, `A6`, `8A`: a measurement, not a counter | **[?]** |
+
+### Values for everything the box reads **[ok]**
+`esp-freezer-emulator-poc/tools/gen_params.py` pairs every read request with the freezer's reply in all captures: **285**
+distinct answers in groups `04`, `08`, `0C`, `10`, `14`, `24`, `3C`, `40`, `48`, `58`, `60` (generated table
+`esp-freezer-emulator-poc/lib/freezer_master/captured_params.h`). Findings from it:
+- The answer depends on the **requested flag**, not only on grp/id: `0C/01 20` returns `03`, `0C/01 21` returns `00`;
+  `08/90` requested with `40` is answered with flag `20` (1 byte). A replacement freezer must key its table on (grp, id, flag).
+- Many requested params are answered with flag `00` by the real freezer itself (e.g. `0C/E4`, `0C/F9`, `60/0C`, `60/0D`,
+  `08/9E`, `08/9F`).
+- Bench test 2026-11-05 (ESP8266 freezer emulator + real box, no freezer; logs in `esp-freezer-emulator-poc/logs/box_run*.txt`):
+  - With only ~10 params known and everything else answered `00`, the box never read group `0C`: it re-read a short
+    **17-entry** `08/14 ... 04/02` list every 1.14 s and the app reported "Something went wrong" for SuperFrost and set-point.
+  - With the captured table and the box **power-cycled while the emulator was running** (`box_run6.txt`), the box ran
+    the full start-up of `03-bootup.md` (handshake, versions from `7F` and `01`, `08`/`0C` lists, `3C`, WiFi writes,
+    `48/00` = `03` → `04` → `05`), then the steady-state cycle (`08/15` list, `0C` lists, **22-entry** `08/14` list), and
+    SuperFrost on/off and set-point -16 °C from the app arrived as the writes in `02-commands.md`, byte for byte. **[ok]**
+  - Once healthy, the box **stays** healthy when the freezer side goes away: two ESP resets (bus idle high ~8 s) and the bus
+    held **low** for 5 s and 30 s (`L <ms>` console command, like a freezer switched off), each followed by the hello and
+    handshake, left it reading its `0C` lists (`logs/restart_exp_*`). **[ok]**
+  - But after the freezer side was **gone for ~4 min** (ESP crash, master stopped until restarted by hand) the box came
+    back **degraded**: handshake and `48`/`4C` writes only, then the 17-entry list, no `0C` reads, app commands fail.
+    `box_run5.txt` is the same case (ESP unplugged for minutes). So the trigger is a freezer outage longer than somewhere
+    between 30 s and 4 min, or start-up reads answered `00`. **[ok observation; exact timeout ?]**
+  - Nothing tried brought a degraded box back: hello/handshake restart, all event flags `FFFFFFFF FFFFFFFF`, writing the
+    box's `48/00` back to `00`, a 10 s bus-low "power-off" of the freezer. Only a **box power cycle** with a working freezer
+    on the bus does. A real freezer never disappears for minutes while the box is powered (they share the supply).
 
 ## 4. What a replacement box needs (summary)
 The replacement acts as **node `02`**. It never sends a BREAK or a slot byte.
@@ -125,6 +154,11 @@ The replacement acts as **node `02`**. It never sends a BREAK or a slot byte.
 4. Watch the event-flag block in slot `FF`; on a set flag read `0C/09` (alarm), `0C/31` (door), `0C/00` (mode).
 5. Door-open alarm = flag word `00000100`/`08000000`, then `0C/09 = 01`. Cleared the same way with `0C/09 = 00`.
 6. Whether the freezer insists on the start-up handshake (hello, table exchange, `21`-`23`) is open (`03-bootup.md`).
+
+The reverse direction (replacing the **freezer** towards a real box) works on the bench: `esp-freezer-emulator-poc/`. It
+needs the slot schedule, the handshake (`01`/`11`, `21`-`23`, `02`/`12`), the version reply `16`, node `01`'s version
+reply (the box asks node `01` with `81 02 06 01 00` and waits for `82 01 16 ...` in slot `01`), answers to every read
+(section 3, "Values for everything the box reads") and the ticking counters `08/04`/`08/2A`.
 
 ## 5. Open points
 - A write gets no reply slot; the only confirmation seen is the event flag and the next read.

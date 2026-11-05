@@ -1,8 +1,7 @@
-// UART0 driver for the freezer emulator on the ESP8266: RX as in ../../../esp-smartdevice-emulator-poc/lib/bus_uart_esp8266
+// Bus driver for the freezer emulator on the ESP8266: RX as in ../../../esp-smartdevice-emulator-poc/lib/bus_uart_esp8266
 // (copied, see the note in bus_master.cpp) plus a transmitter that can send BREAK + slot byte + body.
-// RX: GPIO13 (IO swap, FUNCTION_4). TX: UART0 TXD swapped to GPIO15, inverted (UCTXI), driving an N-MOSFET that pulls the
-// bus low (see WIRING.md). Our own bytes come back on RX like on the real bus, so the ring also holds what we sent.
-// Nothing here has been tested on a bench.
+// RX: UART0 RXD on GPIO13 (IO swap, FUNCTION_4). TX: UART1 TXD on GPIO2 (D4), open-drain, to the bus through 47 Ohm
+// (see WIRING.md). Our own bytes come back on RX like on the real bus, so the ring also holds what we sent.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -12,7 +11,7 @@ namespace bus_master {
 constexpr uint32_t CPU_MHZ = 160;
 constexpr unsigned MAX_SLOT = 160;
 constexpr unsigned RING = 6;
-constexpr size_t MAX_TX = 126;  // body bytes after the slot byte: slot byte + body must fit the 128 B TX FIFO
+constexpr size_t MAX_TX = 150;  // body bytes after the slot byte; beyond the 128 B TX FIFO transmit() waits for room
 
 enum : uint8_t { F_FRAMING = 1, F_OVERRUN = 2, F_TRUNC = 4 };
 
@@ -32,8 +31,11 @@ void begin();
 bool pop(Slot& out);  // loop() side
 const Counters& counters();
 
-// Transmit is off after begin(): the TX pin stays idle (MOSFET off) and transmit() does nothing.
+// Transmit is off after begin(): the TX pin stays released (bus high) and transmit() does nothing.
 void tx_enable(bool on);
+// Hold the bus low (UART1 TX break) or release it: what the box sees when the freezer is switched off and the pull-up
+// with it. Only for experiments; the master must be stopped.
+void hold_low(bool on);
 bool tx_enabled();
 
 // Blocking (about 0.8 ms plus the body duration is NOT waited for): BREAK, slot byte, then the body 250 us after the

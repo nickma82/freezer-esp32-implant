@@ -1,1 +1,3 @@
 .pio/
+# board logs and captures: they contain the WiFi name, IP and MAC the box writes to the bus
+logs/

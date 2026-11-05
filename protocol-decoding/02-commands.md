@@ -30,6 +30,13 @@ freezer grants it every 570 ms. The frames in the table below include the slot b
 | Set-point (e.g. -17 / -16 °C) | `0C/06` (2 bytes) | `00 <int8 °C>` | `02 FF 02 24 01 05 0C 06 40 00 EF D8 99` / `... F0 06 7A` | **[ok]** |
 | BottleTimer on / off | - | - | **no dedicated command found** | see below |
 
+**Bench-confirmed from the box side (2026-11-05):** with the ESP8266 freezer emulator (`esp-freezer-emulator-poc/`) on
+the bus instead of the freezer, the app's SuperFrost on, SuperFrost off and set-point -16 °C produced exactly the
+SuperFrost on/off and `... 0C 06 40 00 F0 06 7A` frames above, CRC included (`esp-freezer-emulator-poc/logs/box_run6.txt`
+at 104.8 s, 107.1 s and 99.7 s). Precondition: the box must have done its full start-up reads against a freezer that
+answers them (`01-protocol.md` §3, "Values for everything the box reads"); otherwise the app reports "Something went wrong"
+and no frame appears on the bus.
+
 State readback: node `01`'s periodic `01`/`81` read returns param `0C/00` = `04` while SuperFrost is active and `01` when it is not.
 Param `08/02` shows up in a separate `01/81` pair (`08 15, 08 29, 08 2C, 08 02`) while party mode is being changed.
 Note: the `01`/`81` traffic belongs to node `01` (a device in the freezer, see `05-bus-roles.md`), not to the box. The box

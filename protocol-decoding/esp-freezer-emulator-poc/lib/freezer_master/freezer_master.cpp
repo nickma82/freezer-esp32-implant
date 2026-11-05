@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "captured_params.h"
+
 namespace fm {
 
 namespace {
@@ -18,44 +20,37 @@ constexpr uint8_t DST_BOX = 0x82;  // dst byte for messages to the box, also the
 }  // namespace
 
 Master::Master() {
-  // Values as read from the captured freezer (../../03-bootup.md, ../../01-protocol.md §3).
+  // Everything the captured freezer answered (../../03-bootup.md, ../../01-protocol.md §3), then the state we start in.
+  for (unsigned i = 0; i < N_CAPTURED && np_ < NPARAM; i++) {
+    const CapturedParam& c = CAPTURED[i];
+    params_[np_++] = Param{c.grp, c.id, c.req_flag, c.flag, c.vlen, c.value};
+  }
   set_param(0x0C, 0x00, 0x20, 1, 0x01);    // mode: normal
   set_param(0x0C, 0x06, 0x40, 2, 0x00EE);  // set-point -18 degC
-  set_param(0x0C, 0x14, 0x40, 2, 0x00EE);  // current temperature -18 degC
+  set_param(0x0C, 0x14, 0x40, 2, 0x00EF);  // current temperature -17 degC
   set_param(0x0C, 0x31, 0x20, 1, 0);       // door closed
   set_param(0x0C, 0x09, 0x20, 1, 0);       // door alarm inactive
   set_param(0x08, 0x02, 0x20, 1, 0);       // party mode off
-  set_param(0x3C, 0x00, 0x20, 1, 0x1D);
-  set_text(0x3C, 0x01, "FNc    5076");
-  set_param(0x3C, 0x04, 0x80, 4, 0);
-  set_text(0x3C, 0x05, "20A/001");
-  set_text(0x3C, 0x07, "123456789");
-  set_text(0x3C, 0x0A, "9935672-01");
-  set_text(0x3C, 0x0D, "993567201");
-  set_text(0x3C, 0x10, "987654321");
-  set_text(0x3C, 0x1B, "0000");
 }
 
-const Param* Master::find(uint8_t grp, uint8_t id) const {
-  for (size_t i = 0; i < np_; i++)
-    if (params_[i].grp == grp && params_[i].id == id) return &params_[i];
-  return nullptr;
+const Param* Master::find(uint8_t grp, uint8_t id, uint8_t req_flag) const {
+  const Param* any = nullptr;
+  for (size_t i = 0; i < np_; i++) {
+    const Param& p = params_[i];
+    if (p.grp != grp || p.id != id) continue;
+    if (p.req_flag == req_flag) return &p;
+    if (!any) any = &p;
+  }
+  return any;
 }
 
 void Master::set_param(uint8_t grp, uint8_t id, uint8_t flag, uint8_t vlen, uint32_t value) {
-  for (size_t i = 0; i < np_; i++)
-    if (params_[i].grp == grp && params_[i].id == id) { params_[i].value = value; return; }
-  if (np_ >= NPARAM) return;
-  params_[np_++] = Param{grp, id, flag, vlen, value};
-}
-
-void Master::set_text(uint8_t grp, uint8_t first_id, const char* s) {  // 4-byte NUL padded chunks in id order
-  size_t n = strlen(s);
-  for (size_t off = 0; off < n; off += 4) {
-    uint32_t v = 0;
-    for (size_t k = 0; k < 4; k++) v = (v << 8) | (off + k < n ? (uint8_t)s[off + k] : 0);
-    set_param(grp, (uint8_t)(first_id + off / 4), 0x80, 4, v);
+  for (size_t i = 0; i < np_; i++) {
+    Param& p = params_[i];
+    if (p.grp == grp && p.id == id && p.req_flag == flag) { p.flag = flag; p.vlen = vlen; p.value = value; return; }
   }
+  if (np_ >= NPARAM) return;
+  params_[np_++] = Param{grp, id, flag, flag, vlen, value};
 }
 
 bool Master::push(const uint8_t* body, size_t n) {
@@ -70,6 +65,20 @@ bool Master::push(const uint8_t* body, size_t n) {
 
 static size_t to_box(uint8_t svc, const uint8_t* p, size_t plen, uint8_t* out) {
   return lb::build_body(DST_BOX, NODE_FREEZER, svc, 0x01, p, plen, true, out, MAX_BODY);
+}
+
+// 08/04 and 08/2A are little-endian 32-bit second counters in the captured freezer (+1 per second in every capture;
+// e.g. 08/04 = 76 9C 6A 05 at 13.8 s, 8A 9C 6A 05 at 33.7 s). Params store the bytes big endian, so swap, add, swap back.
+void Master::tick_counters() {
+  static constexpr uint8_t IDS[] = {0x04, 0x2A};
+  for (uint8_t id : IDS) {
+    for (size_t i = 0; i < np_; i++) {
+      Param& p = params_[i];
+      if (p.grp != 0x08 || p.id != id || p.vlen != 4) continue;
+      uint32_t le = __builtin_bswap32(p.value) + 1;
+      p.value = __builtin_bswap32(le);
+    }
+  }
 }
 
 bool Master::event_body(Slot& out) {
@@ -87,6 +96,20 @@ bool Master::event_body(Slot& out) {
 
 void Master::next(uint32_t now_ms, Slot& out) {
   if (!have_time_) { have_time_ = true; t_hello_ = now_ms; t_event_ = now_ms; }
+  if (follow_pending_) {
+    if (!follow_armed_) { follow_armed_ = true; follow_t0_ = now_ms; }
+    else if ((uint32_t)(now_ms - follow_t0_) >= STEP_MS) {
+      int8_t t = current_temp();
+      if (t != setpoint_c_) {
+        t = (int8_t)(t < setpoint_c_ ? t + 1 : t - 1);
+        set_temperature(t);  // 0C/14 + event flags in the next 1 s block
+        followed_c_ = t;
+        followed_new_ = true;
+      }
+      follow_t0_ = now_ms;
+      if (t == setpoint_c_) follow_pending_ = follow_armed_ = false;
+    }
+  }
   const Pos& p = HALF[pos_];
   out.slot = p.slot;
   out.ticks = p.ticks;
@@ -116,9 +139,16 @@ void Master::next(uint32_t now_ms, Slot& out) {
         st_.replies++;
       }
     }
+  } else if (p.slot == 0x01 && node01_version_due_) {
+    // Node 01 (display board) is not on our bus; the box asks it for its version and waits. Answer as node 01 did in
+    // the boot-up capture: `01 82 01 16 01 1D <text>` in node 01's own slot.
+    static const uint8_t v[] = "TOD 5-600|SW 6-2-0|BUS 1-4-0";
+    out.len = (uint8_t)lb::build_body(DST_BOX, 0x01, 0x16, 0x01, v, sizeof v, true, out.body, MAX_BODY);
+    node01_version_due_ = false;
   } else if (pos_ == POS_EVENT && (uint32_t)(now_ms - t_event_) >= EVENT_MS) {
     out.slot = 0xFF;
     t_event_ = now_ms;
+    tick_counters();
     if (event_body(out)) {
       st_.events++;
       counter_ = (uint8_t)(counter_ + 0x10);
@@ -137,7 +167,13 @@ void Master::on_box(const uint8_t* body, size_t n) {
   memcpy(frame + 1, body, n);
   lb::Status rc = lb::decode(frame, n + 1, m);
   if (rc != lb::Status::Ok || !m.crc_ok) { st_.box_bad_crc++; return; }
-  if (m.src != NODE_BOX || m.dst != 0xFF) return;  // not a message from the box to the freezer
+  if (m.src != NODE_BOX) return;
+  if (m.dst == 0x81 && m.svc == 0x06) {  // version request to node 01, answered in slot 01 (see next())
+    st_.box_msgs++;
+    node01_version_due_ = true;
+    return;
+  }
+  if (m.dst != 0xFF) return;  // not a message from the box to the freezer
   st_.box_msgs++;
   if (hs_ != Hs::Running) hs_ = Hs::Running;
 
@@ -169,8 +205,16 @@ void Master::on_box(const uint8_t* body, size_t n) {
     case 0x24:
       apply_write(m);
       return;
-    default:
+    default: {
+      record_seen(2, m.svc, 0, false);
+      Note nt = {};
+      nt.kind = NoteKind::UnknownSvc; nt.grp = m.svc;
+      size_t take = m.raw_len > 1 ? m.raw_len - 1u : 0;  // dst.. (CRC included), slot byte skipped
+      if (take > sizeof nt.data) take = sizeof nt.data;
+      memcpy(nt.data, m.raw + 1, take); nt.len = (uint8_t)take;
+      note(nt);
       break;
+    }
   }
   if (k) push(out, k);
 }
@@ -182,11 +226,15 @@ void Master::reply_read(const lb::Msg& m) {
   size_t n = 0;
   for (uint8_t i = 0; i < m.nrecs; i++) {
     const lb::Rec& r = m.recs[i];
-    const Param* q = find(r.grp, r.id);
+    const Param* q = find(r.grp, r.id, r.flag);
+    if (record_seen(0, r.grp, r.id, q != nullptr) && !q) {
+      Note nt = {}; nt.kind = NoteKind::UnknownRead; nt.grp = r.grp; nt.id = r.id; note(nt);
+    }
     size_t need = q ? 3 + q->vlen : 3;
     if (n + need > sizeof p) { st_.truncated_reads++; break; }
     p[n++] = r.grp; p[n++] = r.id;
     if (!q) { p[n++] = 0x00; st_.unknown_params++; continue; }  // flag 00 = parameter not available
+    if (q->flag == 0x00) { p[n++] = 0x00; continue; }           // the captured freezer said "not available" itself
     p[n++] = q->flag;
     for (int b = q->vlen - 1; b >= 0; b--) p[n++] = (uint8_t)(q->value >> (8 * b));
   }
@@ -202,10 +250,76 @@ void Master::apply_write(const lb::Msg& m) {
     const lb::Rec& r = m.recs[i];
     uint32_t v = 0;
     for (uint8_t b = 0; b < r.vlen; b++) v = (v << 8) | r.value[b];
+    bool known = find(r.grp, r.id, r.flag) != nullptr;
+    if (record_seen(1, r.grp, r.id, known) && !known) {
+      Note nt = {}; nt.kind = NoteKind::UnknownWrite; nt.grp = r.grp; nt.id = r.id;
+      nt.data[0] = r.flag; memcpy(nt.data + 1, r.value, r.vlen); nt.len = (uint8_t)(1 + r.vlen); note(nt);
+    }
     set_param(r.grp, r.id, r.flag, r.vlen, v);
+    if (r.grp == 0x0C && r.id == 0x06 && r.vlen >= 1) {
+      setpoint_c_ = (int8_t)(v & 0xFF);
+      setpoint_new_ = true;
+      follow_pending_ = true;  // the clock starts at the next next() call (no time here); a new write restarts it
+      follow_armed_ = false;
+    }
   }
   flags_[0] = 0x01000000;  // "any value change", captured with SuperFrost, party and set-point writes
   flags_[1] = 0x08000000;
+}
+
+bool Master::record_seen(uint8_t kind, uint8_t a, uint8_t b, bool known) {
+  for (size_t i = 0; i < nseen_; i++)
+    if (seen_[i].kind == kind && seen_[i].a == a && seen_[i].b == b) { seen_[i].count++; return false; }
+  if (nseen_ >= NSEEN) return false;
+  seen_[nseen_++] = Seen{kind, a, b, known, 1};
+  return true;
+}
+
+void Master::note(const Note& n) {
+  if (note_n_ >= NNOTE) return;
+  notes_[(note_h_ + note_n_) % NNOTE] = n;
+  note_n_++;
+}
+
+bool Master::take_note(Note& n) {
+  if (!note_n_) return false;
+  n = notes_[note_h_];
+  note_h_ = (note_h_ + 1) % NNOTE;
+  note_n_--;
+  return true;
+}
+
+bool Master::inject(uint8_t svc, const uint8_t* payload, size_t n) {
+  uint8_t out[MAX_BODY];
+  size_t k = to_box(svc, payload, n, out);
+  return k && push(out, k);
+}
+
+bool Master::inject_raw(const uint8_t* body, size_t n) {
+  if (n < 4 || n + 2 > MAX_BODY) return false;
+  uint8_t out[MAX_BODY];
+  memcpy(out, body, n);
+  uint16_t c = lb::crc16_xmodem(out, n);
+  out[n] = (uint8_t)c; out[n + 1] = (uint8_t)(c >> 8);
+  return push(out, n + 2);
+}
+
+void Master::door_alarm(bool on) {
+  set_param(0x0C, 0x31, 0x20, 1, on ? 1 : 0);
+  set_param(0x0C, 0x09, 0x20, 1, on ? 1 : 0);
+  flags_[0] |= 0x00000100;
+  flags_[1] |= 0x08000000;
+}
+
+int8_t Master::current_temp() const {
+  const Param* p = find(0x0C, 0x14, 0x40);
+  return p ? (int8_t)(p->value & 0xFF) : setpoint_c_;
+}
+
+void Master::set_temperature(int8_t c) {
+  set_param(0x0C, 0x14, 0x40, 2, (uint8_t)c);
+  flags_[0] |= 0x01000000;
+  flags_[1] |= 0x08000000;
 }
 
 }  // namespace fm

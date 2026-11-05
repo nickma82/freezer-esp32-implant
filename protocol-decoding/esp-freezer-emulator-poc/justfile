@@ -30,9 +30,9 @@ build:
 flash:
     pio run -e nodemcuv2 -t upload --upload-port {{port}}
 
-# serial monitor (keys: g go, s stop, r restart handshake, v full output, ? help)
+# serial monitor (keys: g go, s stop, r restart handshake, v output quiet/normal/full, ? help)
 monitor:
-    pio device monitor -p {{port}} -b 115200
+    pio device monitor -p {{port}} -b 57600
 
 # log the board output to logs/<timestamp>.log (stop with Ctrl-C)
 log:
@@ -41,10 +41,18 @@ log:
     main() {
         local out="logs/board_$(date +%Y%m%d_%H%M%S).log"
         echo "logging to $out"
-        stty -F "{{port}}" 115200 raw -echo
+        stty -F "{{port}}" 57600 raw -echo
         cat "{{port}}" | tee "$out"
     }
     main
+
+# decode crash addresses from the `# CRASH` banner line (epc1, epc2, ...) against the last build
+crash +addrs:
+    "$HOME/.platformio/packages/toolchain-xtensa/bin/xtensa-lx106-elf-addr2line" -pfiaC -e .pio/build/nodemcuv2/firmware.elf {{addrs}}
+
+# regenerate the freezer's parameter table from the captures (../csv)
+params:
+    python3 -I tools/gen_params.py ../csv lib/freezer_master/captured_params.h
 
 # host unit tests of the freezer core
 test:

@@ -91,14 +91,81 @@ void test_read_identity_and_unknown() {
 
   box(s, "FF 02 03 01 03 0C F9 20 00 00");  // CRC wrong on purpose: must be dropped, not answered
   TEST_ASSERT_EQUAL(1, (int)s.m.stats().box_bad_crc);
-  uint8_t p[] = {0x0C, 0xF9, 0x20};
+  uint8_t p[] = {0x0C, 0xF9, 0x20, 0x7A, 0x01, 0x20};  // 0C/F9: captured "not available"; 7A/01: never seen
   uint8_t b[32];
-  size_t n = lb::build_body(0xFF, 0x02, 0x03, 0x01, p, 3, true, b, sizeof b);
+  size_t n = lb::build_body(0xFF, 0x02, 0x03, 0x01, p, sizeof p, true, b, sizeof b);
   s.m.on_box(b, n);
   TEST_ASSERT_TRUE(s.until_body(0x82, x));
-  uint8_t unk[] = {0x0C, 0xF9, 0x00};
-  TEST_ASSERT_EQUAL_HEX8_ARRAY(unk, x.body + 5, 3);
+  uint8_t unk[] = {0x0C, 0xF9, 0x00, 0x7A, 0x01, 0x00};
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(unk, x.body + 5, sizeof unk);
   TEST_ASSERT_EQUAL(1, (int)s.m.stats().unknown_params);
+}
+
+// The list the real box repeated forever while every entry came back "not available" (bench 2026-11-05).
+void test_box_08_list_from_capture() {
+  Sim s;
+  Slot x;
+  box(s, "FF 02 03 01 33 08 14 20 08 20 40 08 31 80 08 32 20 08 13 20 08 14 20 08 16 40 08 04 80 08 51 20 08 2D 80 08 2E 20 08 2A 80 08 33 40 08 59 20 08 2B 80 04 01 40 04 02 40 C3 E2");
+  TEST_ASSERT_TRUE(s.until_body(0x82, x));
+  TEST_ASSERT_EQUAL(0, (int)s.m.stats().unknown_params);
+  uint8_t full[160];
+  full[0] = 0x82; memcpy(full + 1, x.body, x.len);
+  lb::Msg m;
+  TEST_ASSERT_EQUAL(0, (int)lb::decode(full, x.len + 1, m));
+  TEST_ASSERT_TRUE(m.crc_ok);
+  TEST_ASSERT_EQUAL(17, m.nrecs);
+  uint8_t head[] = {0x08, 0x14, 0x20, 0x00, 0x08, 0x20, 0x40};  // 08/14 = 00, 08/20 two bytes, as captured
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(head, x.body + 5, sizeof head);
+  uint8_t tail[] = {0x04, 0x02, 0x40, 0x29, 0x00};                 // last record 04/02 = 2900
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(tail, x.body + x.len - 2 - sizeof tail, sizeof tail);
+}
+
+// 08/04 is a little-endian second counter: after ~3 s of schedule it must have advanced by 3 (one per event block).
+void test_second_counter_ticks() {
+  Sim s;
+  uint32_t v0 = s.m.find(0x08, 0x04, 0x80)->value;
+  int events = 0;
+  while (events < 3) { Slot x = s.step(); if (x.slot == 0xFF && x.len) events++; }
+  uint32_t v1 = s.m.find(0x08, 0x04, 0x80)->value;
+  TEST_ASSERT_EQUAL_UINT32(__builtin_bswap32(v0) + 3, __builtin_bswap32(v1));
+}
+
+// A set-point write from the box moves the current temperature (0C/14) 1 degC per STEP_MS towards it, then stops.
+void test_temperature_follows_setpoint() {
+  Sim s;
+  uint8_t p[] = {0x0C, 0x06, 0x40, 0x00, 0xEC};  // set-point -20 degC; the temperature starts at -17
+  uint8_t b[32];
+  size_t n = lb::build_body(0xFF, 0x02, 0x24, 0x01, p, sizeof p, true, b, sizeof b);
+  s.m.on_box(b, n);
+  int8_t sp;
+  TEST_ASSERT_TRUE(s.m.take_setpoint(sp));
+  TEST_ASSERT_EQUAL_INT8(-20, sp);
+  uint32_t start = s.t_us;
+  int8_t seen[8];
+  uint32_t at_ms[8];
+  int k = 0;
+  while (s.t_us - start < (5 * Master::STEP_MS) * 1000u) {  // room for 5 steps, only 3 are needed
+    s.step();
+    int8_t ft;
+    if (s.m.take_followed(ft) && k < 8) { seen[k] = ft; at_ms[k] = (s.t_us - start) / 1000; k++; }
+  }
+  TEST_ASSERT_EQUAL(3, k);
+  TEST_ASSERT_EQUAL_INT8(-18, seen[0]);
+  TEST_ASSERT_EQUAL_INT8(-19, seen[1]);
+  TEST_ASSERT_EQUAL_INT8(-20, seen[2]);
+  for (int i = 0; i < 3; i++) TEST_ASSERT_UINT32_WITHIN(500, (i + 1) * Master::STEP_MS, at_ms[i]);
+  TEST_ASSERT_EQUAL_UINT32(0x00EC, s.m.find(0x0C, 0x14, 0x40)->value);
+}
+
+// The box asks node 01 for its version (`81 02 06 01 00`); we answer for it in slot 01, as node 01 did in the capture.
+void test_node01_version() {
+  Sim s;
+  Slot x;
+  box(s, "81 02 06 01 00 78 E4");
+  TEST_ASSERT_TRUE(s.until_body(0x01, x));
+  uint8_t head[] = {0x82, 0x01, 0x16, 0x01, 0x1D, 'T', 'O', 'D'};
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(head, x.body, sizeof head);
+  expect("01 82 01 16 01 1d 54 4f 44 20 35 2d 36 30 30 7c 53 57 20 36 2d 32 2d 30 7c 42 55 53 20 31 2d 34 2d 30 00 ec ad", x);
 }
 
 void test_write_and_event_block() {
@@ -108,7 +175,7 @@ void test_write_and_event_block() {
   size_t n = lb::build_write_param(0x0C, 0x00, 0x20, 0x04, b, sizeof b);
   s.m.on_box(b, n);
   TEST_ASSERT_EQUAL(1, (int)s.m.stats().writes);
-  TEST_ASSERT_EQUAL_UINT32(4, s.m.find(0x0C, 0x00)->value);
+  TEST_ASSERT_EQUAL_UINT32(4, s.m.find(0x0C, 0x00, 0x20)->value);
   uint8_t e1[160], e2[160];
   int got = 0;
   uint8_t ctr[3] = {0, 0, 0};
@@ -143,6 +210,63 @@ void test_write_and_event_block() {
   TEST_ASSERT_TRUE(m.crc_ok);
 }
 
+void test_setpoint_write() {
+  Sim s;
+  int8_t c = 0;
+  TEST_ASSERT_FALSE(s.m.take_setpoint(c));
+  uint8_t b[32];
+  size_t n = lb::build_write_param(0x0C, 0x06, 0x40, 0xEF, b, sizeof b);  // -17 degC
+  s.m.on_box(b, n);
+  TEST_ASSERT_TRUE(s.m.take_setpoint(c));
+  TEST_ASSERT_EQUAL_INT(-17, c);
+  TEST_ASSERT_FALSE(s.m.take_setpoint(c));  // reported once
+}
+
+void test_unknown_notes_and_seen() {
+  Sim s;
+  Note nt;
+  const uint8_t req[2][3] = {{0x0C, 0x14, 0x20}, {0x77, 0x01, 0x20}};
+  uint8_t b[32];
+  size_t n = lb::build_read_request(req, 2, b, sizeof b);
+  s.m.on_box(b, n);
+  s.m.on_box(b, n);  // second time: counted, not noted again
+  TEST_ASSERT_TRUE(s.m.take_note(nt));
+  TEST_ASSERT_TRUE(nt.kind == NoteKind::UnknownRead);
+  TEST_ASSERT_EQUAL_HEX8(0x77, nt.grp);
+  TEST_ASSERT_FALSE(s.m.take_note(nt));
+  TEST_ASSERT_EQUAL(2, (int)s.m.seen_count());
+  TEST_ASSERT_EQUAL_UINT32(2, s.m.seen_at(1).count);
+  uint8_t u[16];
+  size_t k = lb::build_body(0xFF, 0x02, 0x55, 0x01, (const uint8_t*)"\x01\x02", 2, true, u, sizeof u);
+  s.m.on_box(u, k);
+  TEST_ASSERT_TRUE(s.m.take_note(nt));
+  TEST_ASSERT_TRUE(nt.kind == NoteKind::UnknownSvc);
+  TEST_ASSERT_EQUAL_HEX8(0x55, nt.grp);
+}
+
+void test_inject_and_alarm() {
+  Sim s;
+  Slot x;
+  const uint8_t pl[] = {0xAA, 0xBB};
+  TEST_ASSERT_TRUE(s.until_body(0x82, x));  // hello goes out first
+  TEST_ASSERT_TRUE(s.m.inject(0x77, pl, 2));
+  TEST_ASSERT_TRUE(s.until_body(0x82, x));
+  TEST_ASSERT_EQUAL_HEX8(0x82, x.body[0]);
+  TEST_ASSERT_EQUAL_HEX8(0x7F, x.body[1]);
+  TEST_ASSERT_EQUAL_HEX8(0x77, x.body[2]);
+  const uint8_t raw[] = {0x82, 0x7F, 0x66, 0x01, 0x00};
+  TEST_ASSERT_TRUE(s.m.inject_raw(raw, sizeof raw));
+  TEST_ASSERT_TRUE(s.until_body(0x82, x));
+  TEST_ASSERT_EQUAL_HEX8(0x66, x.body[2]);
+  TEST_ASSERT_EQUAL_UINT32(7, x.len);
+  s.m.door_alarm(true);
+  TEST_ASSERT_EQUAL_UINT32(1, s.m.find(0x0C, 0x09, 0x20)->value);
+  Slot e;
+  TEST_ASSERT_TRUE(s.until_body(0xFF, e));
+  uint8_t f0[] = {0x00, 0x00, 0x80, 0x00, 0x00, 0x01, 0x00};
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(f0, e.body + 5, 7);
+}
+
 void test_hello_retry() {
   Sim s;
   Slot x;
@@ -157,7 +281,14 @@ int main() {
   RUN_TEST(test_schedule_shape);
   RUN_TEST(test_handshake_replay);
   RUN_TEST(test_read_identity_and_unknown);
+  RUN_TEST(test_box_08_list_from_capture);
+  RUN_TEST(test_node01_version);
+  RUN_TEST(test_second_counter_ticks);
+  RUN_TEST(test_temperature_follows_setpoint);
   RUN_TEST(test_write_and_event_block);
+  RUN_TEST(test_setpoint_write);
+  RUN_TEST(test_unknown_notes_and_seen);
+  RUN_TEST(test_inject_and_alarm);
   RUN_TEST(test_hello_retry);
   return UNITY_END();
 }

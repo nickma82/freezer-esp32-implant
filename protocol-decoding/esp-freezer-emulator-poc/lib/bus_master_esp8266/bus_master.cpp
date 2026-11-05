@@ -23,9 +23,9 @@ static Counters cnt_;
 static uint64_t cyc_hi_ = 0;
 static uint32_t cyc_last_ = 0;
 static volatile bool tx_on_ = false;
-// RX shares the baud divisor with TX, so while our BREAK byte is sent at DIV_BREAK the receiver sees a clean 0x00 byte
-// (9 bit times low, then the stop bit high) without framing error or UIBD. transmit() sets this flag; the ISR then
-// treats the first 0x00 as the BREAK of a new slot, exactly like a real one.
+// TX is UART1 (own divisor), RX is UART0 at DIV_BIT: our BREAK reaches the receiver through the bus as a real break
+// (0x00 with framing error / UIBD). transmit() sets this flag as well, so the ISR treats the first 0x00 as the BREAK of a
+// new slot either way.
 static volatile bool self_break_ = false;
 
 static inline uint32_t IRAM_ATTR ccount() {
@@ -87,17 +87,22 @@ static void IRAM_ATTR isr(void*, void*) {
 
 void begin() {
   ETS_UART_INTR_DISABLE();
-  pinMode(1, INPUT);   // GPIO1: console TX is UART1 on GPIO2, so U0TXD must not drive it
+  pinMode(1, INPUT);   // GPIO1: U0TXD is not used (UART0 is swapped), the console re-claims it after begin()
   pinMode(3, INPUT);
-  // Safe state first: GPIO15 is a strap pin (low at boot), a plain output held low = MOSFET off.
-  pinMode(15, OUTPUT);
-  digitalWrite(15, LOW);
+  // TX: UART1 TXD on GPIO2, open-drain, wired to the bus through 47 Ohm (no MOSFET). Output 0 pulls the bus low, output 1
+  // releases it, so the box can pull the bus low in its own slot. GPIO2 is a strap pin (must be high at reset): the bus
+  // pull-up keeps it high.
+  pinMode(2, OUTPUT);
+  digitalWrite(2, HIGH);
+  GPC(2) |= (1 << GPCD);   // open-drain
+  GPF(2) |= (1 << GPFPU);  // internal pull-up (weak, ~30-100 kOhm), in addition to the external 4.7 kOhm bus pull-up
+  Serial1.begin(57102, SERIAL_8N1);  // stock UART1 init (TX on GPIO2); divisor is 80 MHz / 57102 = 1401 = DIV_BIT
+  // RX: UART0 swapped to GPIO13 (also hears our own TX through the bus)
   pinMode(13, FUNCTION_4);
   GPF(13) &= ~((1 << GPFPU) | (1 << GPFPD));
-  IOSWAP |= (1 << IOSWAPU0);  // U0RXD on GPIO13, U0TXD on GPIO15
+  IOSWAP |= (1 << IOSWAPU0);  // U0RXD on GPIO13, U0TXD on GPIO15 (unused)
   USD(0) = DIV_BIT;
   USC0(0) = (3 << UCBN) | (1 << UCSBN);  // 8N1
-  USC0(0) |= (1 << UCTXI);               // invert TX BEFORE routing it to GPIO15: idle TX = GPIO15 low = bus released
   USC0(0) |= (1 << UCRXRST) | (1 << UCTXRST);
   USC0(0) &= ~((1 << UCRXRST) | (1 << UCTXRST));
   USC1(0) = (1 << UCFFT);
@@ -106,8 +111,9 @@ void begin() {
   ETS_UART_INTR_ATTACH(isr, nullptr);
   ETS_UART_INTR_ENABLE();
   noInterrupts();
-  pinMode(15, FUNCTION_4);  // route U0TXD (swapped) to GPIO15; this also switches the internal pull-up on ...
-  GPF(15) &= ~((1 << GPFPU) | (1 << GPFPD));  // ... which would turn the MOSFET on through the gate resistor: clear it now
+  pinMode(2, SPECIAL);      // route U1TXD to GPIO2; pinMode() resets pull-up and open-drain bits ...
+  GPF(2) |= (1 << GPFPU);
+  GPC(2) |= (1 << GPCD);    // ... so restore open-drain after routing
   interrupts();
 }
 
@@ -122,6 +128,11 @@ bool pop(Slot& out) {
 const Counters& counters() { return cnt_; }
 
 void tx_enable(bool on) { tx_on_ = on; }
+
+void hold_low(bool on) {
+  if (on) USC0(1) |= (1 << UCBRK);
+  else USC0(1) &= ~(1 << UCBRK);
+}
 bool tx_enabled() { return tx_on_; }
 
 static inline void spin_until(uint32_t target) {
@@ -132,16 +143,19 @@ bool transmit(uint8_t slot, const uint8_t* body, size_t len) {
   if (!tx_on_ || len > MAX_TX) return false;
   uint32_t t0 = ccount();
   self_break_ = true;
-  USD(0) = DIV_BREAK;
-  USF(0) = 0x00;  // inverted TX: start bit + 8 zero bits = 315 us of bus low, then the stop bit releases the bus
+  USD(1) = DIV_BREAK;
+  USF(1) = 0x00;  // start bit + 8 zero bits = 315 us of bus low, then the stop bit releases the bus
   spin_until(t0 + BREAK_DONE_US * CPU_MHZ);
-  USD(0) = DIV_BIT;
+  USD(1) = DIV_BIT;
   spin_until(t0 + SLOT_AT_US * CPU_MHZ);
   uint32_t ts = ccount();
-  USF(0) = slot;
+  USF(1) = slot;
   if (len) {
     spin_until(ts + BODY_AFTER_US * CPU_MHZ);
-    for (size_t i = 0; i < len; i++) USF(0) = body[i];
+    for (size_t i = 0; i < len; i++) {
+      while (((USS(1) >> USTXC) & 0xFF) >= 127) {}  // FIFO full: wait one byte time (only for bodies > 127 bytes)
+      USF(1) = body[i];
+    }
   }
   return true;
 }

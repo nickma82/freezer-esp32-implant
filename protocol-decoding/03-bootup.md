@@ -68,6 +68,17 @@ These are two different devices, not a loader and a main program **[ok]**:
 | 25.8 s | box writes `48/00 = 04` (three times) |
 | ~34 s on | quiet steady state: the freezer's slot schedule (`01` every 285 ms, `02` every 570 ms, `0B`/`0C` every 142.5 ms), the 1 s event block, empty slots `0C`/`7E`/`7F` |
 
+### Reproduced on the bench (2026-11-05)
+The same start-up ran against the ESP8266 freezer emulator after a box power cycle (`esp-freezer-emulator-poc/logs/box_run6.txt`):
+hello reply, `21`/`22`/`23` acks, table `13 00 00 00` → `13 00 00 04`, a `48` read, `48/00 = 03`, `4C/01..03`, `48/10`..,
+version requests to `7F` (`FF 02 06`) and to node `01` (`81 02 06`), the `08` and `0C` lists, the `3C` identification,
+then (~15 s later) the `<ip>@<ssid>` text and `48/00` = `04`, then `05`. The order and every request list match this capture.
+- `48/00` has a third value, **`05`**, written ~5 s after `04` (twice), and the box then reads `48/00` back. Final
+  state, probably "cloud connected" **[hyp]**.
+- `4C/01` (`84 8C B3 A0 24`) was identical in all bench sessions of the same box. **[?]**
+- If the freezer side restarts while the box keeps running, the box repeats only the handshake and the `48`/`4C` writes,
+  not the reads. After an outage of minutes it stays degraded until power-cycled; see `01-protocol.md` §3.
+
 ## New message types seen only at startup
 All frames follow `<slot> <dst> <src> <svc> <flag> <len> ...` (`protocol.py`: `<cmd> <marker> <second> <tag>`) with the CRC
 from `02-commands.md`. Services already known: `03` read list, `13` values, `24` write/values, `30` ack. Replies are the

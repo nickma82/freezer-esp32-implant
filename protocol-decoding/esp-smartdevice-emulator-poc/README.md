@@ -3,6 +3,8 @@
 Proof of concept for replacing the SmartDeviceBox with an Amica NodeMCU v2 (ESP8266EX). The target is the ESP8266; this
 project emulates the SmartDeviceBox side. Entry point: `just` lists the recipes.
 The opposite direction (emulating the freezer towards a real box) is `../esp-freezer-emulator-poc`.
+**Before phase 2, read `FREEZER-EMULATOR-FINDINGS.md`**: what that bench work found about transmitting from the
+ESP8266, the console, and how the real box behaves as node `02`, with a checklist for this project.
 
 ## Phases
 
