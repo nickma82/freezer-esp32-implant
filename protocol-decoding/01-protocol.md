@@ -115,6 +115,10 @@ Nodes `01` and `02` seem to react to a set flag by reading the affected params. 
 | `58/07` | 1 | status byte pushed by node `0B` to the freezer: `11` normal, `01` while the door is open | **[hyp]** |
 | `10/00` | 2 | pushed by node `0B` to the freezer, rarely (4 times in all captures, always while node `0B` is in low-power mode): `4217`, `5617`, `2617`, `0A17`; low byte always `17` | **[?]** |
 | `0C/07`, `0C/2B`, `0C/10`, `0C/08`, `24/xx`, `58/xx` | | unknown (see 04) | **[?]** |
+| `0C/11` | 1 | **power-failure alarm**: `01` active. The app shows "power supply" warning together with "freezing zone <`0C/12`> °C" | bench 2026-11-05: set to `01` with event flags `00000100/08000000`, app warning within the minute **[ok]** |
+| `0C/12` | 2 | temperature reported with the power-failure alarm, `00 <int8 degC>` (captured `00 C9` = -55, shown as "-55 °C" in the app); probably the warmest temperature during the outage **[hyp]** | same test |
+| `0C/2E` | 2 | read together with `0C/11`/`0C/12`, captured `00 BD` (-67) **[?]** | |
+| `0C/0B`, `0C/0D`, `0C/0F` | 1 | alarm-like flags the box polls (`0C/0D` with `0C/0C` = -55 and `0C/2F` = -67, `0C/0F` with `0C/0E`/`0C/30` = 0); set to `01` one at a time with the alarm event flags: **no reaction in the app** | bench 2026-11-05 **[ok]**, meaning **[?]** |
 | `08/04` | 4 | **seconds counter**, 32-bit **little endian**, +1 per second (`76 9C 6A 05` at 13.8 s, `8A 9C 6A 05` at 33.7 s, `9F 9C 6A 05` at 54.6 s) | bootup, door_open_alarm, door_open_close_nop30 **[ok]** |
 | `08/2A` | 4 | second seconds counter, little endian, +1 per second, other start value (`E6 56 39 08` at 14.4 s) | same 3 captures **[ok]**, meaning **[?]** |
 | `08/20` | 2 | drifts slowly, high byte `16`, low byte `BA` → `D6`, `F5`, `8C`, `A6`, `8A`: a measurement, not a counter | **[?]** |

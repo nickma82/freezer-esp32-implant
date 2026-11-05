@@ -80,6 +80,10 @@ Everything else in the 18 param read (`0C/4C`, `47`, `11`, `0D`, ... ) stayed 0,
 
 ## Open questions
 1. BottleTimer stays out of scope (probably implemented in the cloud/app).
-2. Which of the other 17 params in the alarm read are other alarm types? Needs captures of those alarms.
+2. Which of the other 17 params in the alarm read are other alarm types? Partly answered on the bench (2026-11-05, freezer
+   emulator + real box, `esp-freezer-emulator-poc/tools/alarm_probe.sh`): **`0C/11 = 01` is the power-failure alarm**
+   (app: "power supply" warning with "freezing zone -55 °C" = `0C/12`); `0C/0B`, `0C/0D`, `0C/0F` = `01` gave no app
+   reaction. The box does not poll `0C/4C`, `47`, `46`, `4B`, `45`, `58`, `49` at all (node `01` does), so they cannot
+   reach the app. See `01-protocol.md` §3.
 3. A write gets no reply slot (`05-bus-roles.md` section 5); after a write only the event flags change.
 4. The box does not send the leading break; the freezer does. The box answers ~0.4 ms after the slot byte `02`.

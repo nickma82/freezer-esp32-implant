@@ -53,6 +53,9 @@ git-ignored: they contain the WiFi name, IP and MAC the box writes to the bus).
 - **Freezer → app path**: after an event block with flags (`01000000/08000000` "value changed", `00000100/08000000`
   door alarm) the box re-reads, and the app shows the new `0C/14` temperature, the door alarm (`0C/09 = 01`, `0C/31 = 01`)
   and its end (`00`). So a replacement box must watch the event block and re-read the affected params.
+- **Power-failure alarm**: `0C/11 = 01` (with the alarm event flags) made the app show a "power supply" warning with
+  "freezing zone -55 °C", i.e. `0C/12`. `0C/0B`, `0C/0D`, `0C/0F` = `01` showed nothing. A replacement box should
+  report `0C/11` (and `0C/12`) as an alarm.
 
 ## 4. What the freezer answers (useful as test vectors) [ok]
 - `../esp-freezer-emulator-poc/lib/freezer_master/captured_params.h`: **285** answers of the captured freezer, keyed by
