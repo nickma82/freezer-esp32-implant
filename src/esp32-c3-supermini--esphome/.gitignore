@@ -1,0 +1,7 @@
+secrets.yaml
+.esphome/
+.pio/
+build/
+host-test/.pio/
+__pycache__/
+*.pyc

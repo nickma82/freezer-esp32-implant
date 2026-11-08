@@ -44,6 +44,7 @@ An unpopulated 4-pad footprint (`S0`) and 4 holes at the board edge look like pr
 | `captures/anon/` | The same captures with device IDs blanked; the publishable set.     |
 | `docs/`          | Protocol write-up: framing, command table, state machine; photos.   |
 | `tools/`         | Decoders, the anonymizer, test senders.                             |
+| `src/esp32-c3-supermini--esphome/` | ESPHome firmware: ESP32-C3 SuperMini as node `02` (box replacement), Home Assistant. |
 
 Name captures `YYYY-MM-DD-<appliance-model>-<action>.sal`, with a matching `.md` noting what was done when (box
 plugged in, door opened at ~12 s, SuperFrost on in the app at ~30 s, ...) so messages can be matched to actions.

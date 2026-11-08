@@ -1,0 +1,1 @@
+../../../../protocol-decoding/esp-smartdevice-emulator-poc/lib/freezer_bus/freezer_bus.cpp

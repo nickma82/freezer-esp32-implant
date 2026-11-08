@@ -1,0 +1,94 @@
+# ESPHome implant for the ESP32-C3 SuperMini (bus node 02). `just` lists the recipes.
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# pinned ESPHome release (newest one at least two weeks old, 2026.10.0 uploaded 2026-10-21)
+esphome_version := "2026.10.0"
+esphome := "uvx esphome==" + esphome_version
+config := "freezer-implant.yaml"
+name := "freezer-implant"
+# empty PORT = let ESPHome pick (USB serial or OTA)
+port := env_var_or_default("PORT", "")
+
+# list recipes
+default:
+    @just --list
+
+# create secrets.yaml from the example if it does not exist yet
+secrets:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    main() {
+        if [[ -e secrets.yaml ]]; then
+            echo "secrets.yaml already exists"
+            return
+        fi
+        cp secrets.yaml.example secrets.yaml
+        echo "created secrets.yaml, edit it (api_key: openssl rand -base64 32)"
+    }
+    main
+
+# validate the YAML without compiling
+config:
+    {{esphome}} config {{config}}
+
+# compile the firmware
+build:
+    {{esphome}} compile {{config}}
+
+# flash over USB (native USB-Serial/JTAG); PORT=/dev/ttyACM0 to pick the port
+flash:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    main() {
+        local args=()
+        if [[ -n "{{port}}" ]]; then
+            args+=(--device "{{port}}")
+        fi
+        {{esphome}} run {{config}} --no-logs "${args[@]}"
+    }
+    main
+
+# follow the device log; PORT=/dev/ttyACM0 to pick the port
+logs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    main() {
+        local args=()
+        if [[ -n "{{port}}" ]]; then
+            args+=(--device "{{port}}")
+        fi
+        {{esphome}} logs {{config}} "${args[@]}"
+    }
+    main
+
+# host unit tests of the bus engine (PlatformIO native)
+test:
+    pio test -d host-test -e native
+
+# after a build: the core copied by ESPHome must be identical to the shared source
+check-core:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    main() {
+        local src="components/freezer_bus"
+        local built=".esphome/build/{{name}}/src/esphome/components/freezer_bus"
+        local f rc=0
+        for f in freezer_bus.h freezer_bus.cpp; do
+            if [[ ! -f "$built/$f" ]]; then
+                echo "MISSING: $built/$f (run 'just build' first)" >&2
+                rc=1
+            elif ! cmp -s "$src/$f" "$built/$f"; then
+                echo "DRIFT: $built/$f differs from $src/$f" >&2
+                rc=1
+            else
+                echo "ok: $f"
+            fi
+        done
+        return "$rc"
+    }
+    main
+
+# remove build output
+clean:
+    rm -rf .esphome host-test/.pio
