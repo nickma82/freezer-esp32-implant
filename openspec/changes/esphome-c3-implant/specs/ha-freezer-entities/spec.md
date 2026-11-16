@@ -1,7 +1,7 @@
 ## Purpose
 
 What Home Assistant sees of the freezer through the ESPHome native API, and what it can control. It replaces the
-Freezer app and cloud with local entities backed by the node-02 engine.
+vendor app and cloud with local entities backed by the node-02 engine.
 
 ## ADDED Requirements
 
@@ -64,8 +64,8 @@ The device SHALL expose:
 - **WHEN** the board boots
 - **THEN** Bus transmit is on, without any action in Home Assistant
 
-### Requirement: Local operation without the Freezer cloud
-All control and status SHALL work over the local ESPHome API without any connection to Freezer services. Wi-Fi
+### Requirement: Local operation without the vendor cloud
+All control and status SHALL work over the local ESPHome API without any connection to vendor services. Wi-Fi
 credentials and the API encryption key SHALL come from a git-ignored secrets file. Logs SHALL NOT print the Wi-Fi
 password or the API key. Logs MAY print the IP and SSID only at debug level.
 

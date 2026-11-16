@@ -1,6 +1,6 @@
 ## Purpose
 
-User-facing control and status of the Freezer freezer from the NodeMCU's serial console, acting as node `02`. It covers
+User-facing control and status of the freezer from the NodeMCU's serial console, acting as node `02`. It covers
 the functions the SmartDeviceBox offers (SuperFrost, party mode, set-point, state and alarms) using only frames verified
 against the captures.
 

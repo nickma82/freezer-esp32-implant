@@ -1,4 +1,4 @@
-"""Freezer SmartDevice <-> freezer MCU protocol: frame parser and encoder.
+"""SmartDevice <-> freezer MCU protocol: frame parser and encoder.
 A message on the wire is: BREAK, <cmd>, <body...>, <crc lo>, <crc hi>.
 decode()/encode() work on the bytes after the break (cmd first).
 Roles (05-bus-roles.md): BREAK and <cmd> (the slot byte) are sent by the freezer; the body is sent by the slot owner.

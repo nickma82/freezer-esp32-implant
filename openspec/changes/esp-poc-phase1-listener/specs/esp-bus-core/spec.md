@@ -1,6 +1,6 @@
 ## Purpose
 
-Chip-independent implementation of the Freezer freezer bus protocol: checksum, framing, parameter records, known
+Chip-independent implementation of the freezer bus protocol: checksum, framing, parameter records, known
 semantics and the node-02 message builders. It is verified on the host against the captured traffic so that every
 firmware phase rests on the same proven core.
 

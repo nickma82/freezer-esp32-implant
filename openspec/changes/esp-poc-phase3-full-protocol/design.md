@@ -91,5 +91,5 @@ don't use the new commands, or flash the phase-2 build. Re-plugging the original
 
 ## Open Questions
 
-- The allowed set-point range in the Freezer app. Deferrable: it only changes the range constant.
+- The allowed set-point range in the vendor app. Deferrable: it only changes the range constant.
 - Whether node `01`/`0B`'s low-power mode delays its answers to the version request. Deferrable: it only affects the timeout value.

@@ -1,4 +1,4 @@
-// Chip-independent core of the Freezer freezer bus protocol: a port of ../../src/crc.py and ../../src/protocol.py.
+// Chip-independent core of the freezer bus protocol: a port of ../../src/crc.py and ../../src/protocol.py.
 // Pure C++17, no Arduino/SDK headers, fixed buffers, no heap. All buffers are caller-owned or inside the structs.
 #pragma once
 #include <stddef.h>

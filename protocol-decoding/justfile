@@ -1,4 +1,4 @@
-# Freezer SmartDevice <-> freezer MCU protocol analysis
+# SmartDevice <-> freezer MCU protocol analysis
 # Developer entrypoint: `just` lists the recipes.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]

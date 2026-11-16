@@ -1,4 +1,4 @@
-# Freezer SmartDevice box <-> freezer MCU: protocol notes
+# SmartDevice box <-> freezer MCU: protocol notes
 
 Consolidated state of knowledge. Sources: all captures in `raw-captures/` (decoded to `csv/*_hex.csv`), tools in this folder
 (`src/frames.py` burst splitter, `src/crc.py`, `src/protocol.py` parser/generator, `src/timeline.py`; `tests/`; run `just` for the recipes).

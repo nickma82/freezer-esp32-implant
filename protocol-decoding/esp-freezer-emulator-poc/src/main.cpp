@@ -237,7 +237,7 @@ static void print_stats() {
 
 static void welcome() {
   logf("# ==============================================");
-  logf("# Freezer freezer emulator (node 7F), NOT bench-tested");
+  logf("# Freezer emulator (node 7F), NOT bench-tested");
   logf("# cpu %u MHz, reset: %s, uptime %lu s", ESP.getCpuFreqMHz(), ESP.getResetReason().c_str(), (unsigned long)(millis() / 1000));
   const rst_info* ri = ESP.getResetInfoPtr();  // the core's crash dump goes to U0TXD (swapped to the unused GPIO15): keep it here
   if (ri->reason == REASON_EXCEPTION_RST || ri->reason == REASON_SOFT_WDT_RST || ri->reason == REASON_WDT_RST)

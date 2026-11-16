@@ -1,4 +1,4 @@
-// Node-02 protocol engine: the SmartDeviceBox's role on the Freezer freezer bus, as pure logic.
+// Node-02 protocol engine: the SmartDeviceBox's role on the freezer bus, as pure logic.
 //
 // Pure C++17. Includes only freezer_bus.h (the `lb` core) and std C headers: no ESPHome, no ESP-IDF, no heap, fixed
 // buffers. Single threaded: ONE caller (the bus task) drives every method below. The component layer adds locking

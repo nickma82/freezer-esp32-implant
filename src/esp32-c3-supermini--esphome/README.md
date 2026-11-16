@@ -1,6 +1,6 @@
-# Freezer freezer implant (ESP32-C3 SuperMini + ESPHome)
+# Freezer implant (ESP32-C3 SuperMini + ESPHome)
 
-An ESP32-C3 SuperMini replaces the Freezer SmartDeviceBox as bus node `02` and exposes the freezer to Home Assistant
+An ESP32-C3 SuperMini replaces the original SmartDeviceBox as bus node `02` and exposes the freezer to Home Assistant
 through ESPHome. The protocol core is shared with the emulator PoCs
 (`protocol-decoding/esp-smartdevice-emulator-poc/lib/freezer_bus`, symlinked into `components/freezer_bus/`).
 

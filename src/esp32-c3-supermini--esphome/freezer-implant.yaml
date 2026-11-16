@@ -1,4 +1,4 @@
-# Freezer freezer implant: ESP32-C3 SuperMini acting as bus node 02.
+# Freezer implant: ESP32-C3 SuperMini acting as bus node 02.
 esphome:
   name: freezer-implant
 

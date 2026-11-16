@@ -1,12 +1,12 @@
 # analysis/
 
-Freezer SmartDevice Box traffic
+SmartDevice Box traffic
 
 Traffic between SmartDevice box and the freezers MCO.
-Tested with Freezer Type: gss2766
+Tested with appliance type: gss2766
 
 
-Reverse-engineering notes and tooling for the Freezer SmartDevice <-> freezer MCU serial bus.
+Reverse-engineering notes and tooling for the SmartDevice <-> freezer MCU serial bus.
 
 | Path | Content |
 |------|---------|
@@ -43,5 +43,5 @@ See `01-protocol.md` and `05-bus-roles.md`.)
 
 ## Other Project
 
-- Freezer Cloud <-> HASS bridge https://github.com/ripleyXLR8/liebherr2mqtt
-- Hackaday.io project debugging freezer device https://hackaday.io/project/175029-hack-a-fridge
+- Vendor cloud <-> HASS bridge https://github.com/ripleyXLR8/liebherr2mqtt
+- Hackaday.io project debugging a smart freezer https://hackaday.io/project/175029-hack-a-fridge

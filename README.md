@@ -1,7 +1,7 @@
 # freezer-esp32
 
-Reverse engineering the bus between Freezer appliances and the **SmartDeviceBox** (the Wi-Fi module), so that an
-ESP32 can replace the box entirely and talk to Home Assistant locally, without Freezer's cloud.
+Reverse engineering the bus between a smart appliance and its **SmartDeviceBox** (the Wi-Fi module), so that an
+ESP32 can replace the box entirely and talk to Home Assistant locally, without the vendor's cloud.
 
 Private while captures still carry device IDs; made public once they are anonymized (see *Publishing* below).
 
