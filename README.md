@@ -20,7 +20,7 @@ Private while captures still carry device IDs; made public once they are anonymi
 The SmartDeviceBox PCB is made by E.G.O. Four gold spring-contact pads on the edge are the box ↔ appliance connector,
 silkscreened `1`, `2`, `3` and `GND` (the lone pad, top right in the photo).
 
-![SmartDeviceBox PCB with Nick's debug wires](docs/smartdevicebox-pcb.jpg)
+See docs/smartdevicebox-pcb.jpg
 
 Debug wires in the photo: blue → GND, brown → pad 2, orange → pad 3, green+white → a test point next to pad 1 (a trace
 runs from it to pad 1). Label and QR code pixelated.
@@ -55,24 +55,20 @@ Name captures `YYYY-MM-DD-<appliance-model>-<action>.sal`, with a matching `.md`
 plugged in, door opened at ~12 s, SuperFrost on in the app at ~30 s, ...) so messages can be matched to actions.
 Power-up of the box is worth capturing on its own, since any handshake happens there.
 
-## Publishing
+## Privacy for publishing logs
 
-This repo stays private for good. The public version is a **separate, fresh repo**, never this one switched to public:
-after a rewrite + force-push, GitHub can keep old commits reachable by hash, and pull-request refs (`refs/pull/*`)
-can't be deleted without GitHub Support.
+Remove metrics out of your raw captures
 
-1. Clone this repo and drop the raw captures from the copy's history (`git filter-repo --path captures/raw
-   --invert-paths`), or squash the publishable files into one commit.
-2. Run the device-ID check (`tools/`, to be written once we know where the ID sits in a frame). It must pass on the
+1. Run the device-ID check (`tools/`, to be written once we know where the ID sits in a frame). It must pass on the
    copy: every `.sal` unpacked, every file, every blob in the history and every commit message searched for the ID as
    ASCII, hex in both byte orders and BCD. It also checks that no checksum in the anonymized captures still covers the
    original ID.
-3. Push the copy to a new public repo.
+2. Push the copy to a new public repo.
 
 Keep the ID out of everything except `captures/raw/`: no IDs in `docs/`, test files, code comments, commit messages,
 file or branch names, issues or PRs.
 
 ## Credits
 
-- Nick Mayerhofer: captures, pinout, first protocol analysis.
-- Enduriel
+- nickma82: captures, pinout, first protocol analysis.
+- Enduriel: motivation, architecture
