@@ -3,5 +3,7 @@ secrets.yaml
 .pio/
 build/
 host-test/.pio/
+# host tests build the out-of-tree lib sources in place
+*.o
 __pycache__/
 *.pyc

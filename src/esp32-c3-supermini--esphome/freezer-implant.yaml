@@ -11,13 +11,21 @@ esp32:
 # native USB-Serial/JTAG console (no UART bridge on the SuperMini)
 logger:
   hardware_uart: USB_SERIAL_JTAG
-  level: INFO
+  # a tag may only be quieted below the global level, so the global level is DEBUG
+  level: DEBUG
   logs:
-    freezer: DEBUG
+    component: INFO
+    wifi: INFO
+    api: INFO
+    esp-idf: INFO
+    # freezer stays at DEBUG; set it to INFO to quiet the bus logging
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  # SuperMini: the badly matched chip antenna fails association at full TX power ("Auth Expired",
+  # "Probe Request Unsuccessful" at -65 dBm); 8.5 dB is the common fix for this board
+  output_power: 8.5dB
   ap:  # fallback hotspot if the Wi-Fi is unreachable
     ssid: "freezer-implant"
     password: !secret ota_password
@@ -37,4 +45,61 @@ external_components:
     components: [freezer_bus]
 
 freezer_bus:
+  id: freezer_bus
   bus_pin: GPIO3  # TX+RX open-drain on UART1, 100 ohm series resistor
+  # reply_delay_us: 420      # first answer byte this long after the slot byte (250..600)
+  # status_interval: 10s     # periodic read of the freezer state
+  # network_writes: true     # write IP/SSID/MAC to the freezer like the original box (group 48)
+
+switch:
+  - platform: freezer_bus
+    superfrost:
+      name: "SuperFrost"
+    party:
+      name: "Party mode"
+    bus_transmit:
+      name: "Bus transmit"
+
+number:
+  - platform: freezer_bus
+    setpoint:
+      name: "Set-point"
+
+sensor:
+  - platform: freezer_bus
+    temperature:
+      name: "Temperature"
+    power_fail_temperature:
+      name: "Power-failure temperature"
+    latency_median:
+      name: "Reply latency median"
+    latency_max:
+      name: "Reply latency max"
+    crc_errors:
+      name: "CRC errors"
+    echo_mismatches:
+      name: "Echo mismatches"
+    missed_slots:
+      name: "Missed slots"
+
+binary_sensor:
+  - platform: freezer_bus
+    door:
+      name: "Door"
+    door_alarm:
+      name: "Door alarm"
+    power_fail_alarm:
+      name: "Power-failure alarm"
+    bus_connected:
+      name: "Bus connected"
+
+text_sensor:
+  - platform: freezer_bus
+    freezer_version:
+      name: "Freezer version"
+    node01_version:
+      name: "Node 01 version"
+    model:
+      name: "Model"
+    phase:
+      name: "Start-up phase"

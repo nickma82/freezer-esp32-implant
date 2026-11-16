@@ -20,7 +20,7 @@ Requirement IDs (`H1`-`H17`) refer to `../../hardware-requirements.md`. Protocol
 | Crystal | 40 MHz, marked `40.000 MHz` | [photo] |
 | PCB | silkscreen `V1601`, `ESP32-C3`, `Super Mini`; 16 pads (2 x 8), 2.54 mm pitch | [photo] |
 | Board size | 22.52 x 18 mm | [src] |
-| USB | USB-C, native USB-Serial/JTAG, **no bridge chip** (see B) | [schematic], [photo] |
+| USB | USB-C, native USB-Serial/JTAG, **no bridge chip** (see B) | [ok], [schematic], [photo] |
 | Regulator | marked `73L33`, 3-pin SOT-89-like package next to the left pad row. The schematic shows an ME6211 in SOT-23-5, so our unit differs. Current rating unknown | [photo], rating [?] |
 | VBUS diode | Schottky marked `S` (schematic: BAT60J), VBUS -> VSYS (the `5V` pad side) | [photo], [schematic] |
 | Buttons | `BOOT` (GPIO9) and `RST` (CHIP_EN) | [photo], [schematic] |
@@ -30,7 +30,7 @@ Requirement IDs (`H1`-`H17`) refer to `../../hardware-requirements.md`. Protocol
 Photos: see `photos/README.md`. Still wanted: a close-up of the `73L33` package and the chip marking (to read the full
 line and the date code).
 
-## B. USB: native USB-Serial/JTAG (resolved on paper)
+## B. USB: native USB-Serial/JTAG (confirmed on our unit)
 
 The schematic wires USB D-/D+ directly to GPIO18/19 (`USBD_N`/`USBD_P`), and the photo shows no USB-UART bridge IC
 (no CH340/CP2102 footprint near the USB-C connector). The ESP32-C3 has USB-Serial/JTAG built in, so the port is a CDC-ACM
@@ -45,7 +45,10 @@ The listing's "hold BOOT, press RESET, release RESET, release BOOT" is the gener
 | Arduino IDE | "USB CDC On Boot: Enabled" (`HWCDC`) |
 | Linux | `/dev/ttyACM*` |
 
-Bench confirmation (still open): plug in a board and run `ls /dev/ttyACM*` and `esptool --chip esp32c3 flash_id`.
+Bench confirmation **[ok]** (2026-11-08): our unit enumerates as USB `303a:1001` (Espressif USB-Serial/JTAG) on
+`/dev/ttyACM0`; esptool flashed and verified the freezer-implant firmware over it, and the ESPHome log arrives on the same
+port. A blank board (as delivered) boot-loops with `invalid header: 0xffffffff` / `TG0WDT_SYS_RST` and re-enumerates
+every ~3 s; that is normal for empty flash, not a fault. Flash size/model from `esptool flash_id` still to note.
 `ttyACM*` = native, `ttyUSB*` would mean a bridge after all. Consequence: GPIO20/21 (UART0) are not used by the console
 and stay free.
 
@@ -127,7 +130,7 @@ matters only for a freezer emulator on the C3.
 
 | Req | Verdict |
 | --- | --- |
-| H11 antenna | **worst of the candidates.** A ceramic chip antenna sits too close to the ground plane without the clearance and tuning stripline its datasheet asks for; weak Wi-Fi range is this board's most common complaint. Fine on the bench, wrong inside a steel cabinet. Antenna mods exist (see H) |
+| H11 antenna | **worst of the candidates.** A ceramic chip antenna sits too close to the ground plane without the clearance and tuning stripline its datasheet asks for; weak Wi-Fi range is this board's most common complaint. Fine on the bench, wrong inside a steel cabinet. Antenna mods exist (see H). **Seen on our unit [ok] 2026-11-08:** at default TX power Wi-Fi association failed repeatedly (`Auth Expired`, `Probe Request Unsuccessful`) at -65 dBm; with ESPHome `wifi: output_power: 8.5dB` it connects. Re-tested 2026-11-10: at `20dB` it never associates and draws ~70 mA (scan/retry loop), at `8.5dB` it connects first try at ~10 mA average (checklist item 11). **Finger test 2026-11-10 (n=1):** at `20dB`, ~20 failed attempts over 2 min (14:05:45-14:07:44, `Auth Expired` / `Probe Request Unsuccessful`, also towards an AP at -58 dBm); finger placed on the 40 MHz crystal at 14:07:47, `Connected` at 14:07:49, HA API 5 s later. Reception is fine throughout (APs seen at normal RSSI), only our transmissions fail. Points to **crystal pulling**: the TX field of the badly placed chip antenna couples into the adjacent 40 MHz crystal and shifts the carrier, the AP cannot decode the frames; the finger adds capacitance/damping; no reset was involved, the running retry loop connected right after the finger went on. After removing the finger: ~22 mA average (meter does not resolve TX peaks), board warm, and the link **does not stay up**. **[hyp, strong]** - a repeat would confirm. Conclusion: `20dB` is unusable on this board; keep `8.5dB`. Known fixes from the community: lower TX power (what we use), antenna mod / external antenna. Supply droop in the `73L33` is the alternative explanation, less likely given the finger effect. Amazon reviews of this listing report boards getting very hot and dropping Wi-Fi; the mismatched antenna (reflected RF power) and the linear `73L33` regulator both turn into heat, and lower TX power helps both [hyp] |
 | H9 cold | dev-board parts (LDO, USB connector, LEDs, crystal) are unrated consumer parts; only the chip itself is -40..+85 C |
 | H10 condensation | no coating, exposed USB-C; bench only |
 | H12 supply | the `73L33` regulator's current rating is unknown vs the 250-350 mA Wi-Fi peak. There is a Schottky diode VBUS -> VSYS **[photo], [schematic]**, so the `5V` pad and USB are probably diode-OR'd, but check before connecting both [?] |
@@ -159,13 +162,13 @@ Order roughly by cost. Items 1-3 gate the rest.
 - [ ] 2. Continuity test every pad against its silkscreen; note any deviation from C
 - [x] 3. Photograph chip, USB-C area and regulator; transcribe markings into A (done from the two `signal-*.jpg`; a close-up of the `73L33` is still wanted)
 - [ ] 4. Smoke test: PlatformIO `board = esp32-c3-devkitm-1`, framework arduino, `USB CDC On Boot: Enabled`; blink the on-board LED (confirm GPIO8, active low), then GPIO3 high/low
-- [ ] 5. Console: confirm serial output over USB-Serial/JTAG at 115200 without any UART wiring
+- [x] 5. Console: confirm serial output over USB-Serial/JTAG at 115200 without any UART wiring (ESPHome log on `/dev/ttyACM0`, 2026-11-08)
 - [ ] 6. BREAK TX (**freezer emulator only**, not needed for the implant): `uart_write_bytes_with_break()` at 57600 with 315 us -> measure the low pulse on the 24 MHz analyzer; find the achievable tolerance range (H2, `04-open-questions.md` #11)
 - [ ] 7. BREAK RX: feed the freezer's or the emulator's real BREAK into IO3 and confirm the driver reports a break/framing event rather than garbage bytes (H3)
 - [ ] 8. Open-drain: IO3 as `INPUT_OUTPUT_OD` with a 4.7 kOhm pull-up -> rise time at 57600, and read-back of our own bytes
 - [ ] 9. Live bus: attach to the freezer with TX off, measure the rise time and the resistance to 3.3 V with the box removed -> does the freezer already pull up? (H14)
 - [ ] 10. Reset/flash while attached and `tx on`: the analyzer must show no low pulse caused by the board (phase-2 spec, `esp-node02-responder`)
-- [ ] 11. Supply: current from 5 V idle, during Wi-Fi association and during Wi-Fi TX peaks (H12); check the `73L33`'s temperature after 10 min
+- [ ] 11. Supply: current from 5 V idle, during Wi-Fi association and during Wi-Fi TX peaks (H12); check the `73L33`'s temperature after 10 min - compare default TX power vs `output_power: 8.5dB`; a board that is too hot to touch at 8.5 dB is likely defective (reviews report such units). **Measured 2026-11-10 [ok]** (USB power meter, 5.2 V, averaged, ~10 mA resolution): `8.5dB` → associates on the first try, HA API connected, **~10 mA**; `20dB` → never associates (`Probe Request Unsuccessful` / `Auth Expired` loop, even at -65 dBm), **~70 mA** from the continuous scan/retry. Peaks not captured; back at `8.5dB` after reflashing → **~10 mA** again (reproducible)
 - [ ] 12. Power isolation: does the `5V` pad feed VBUS through the diode, and what happens with USB and an external 5 V applied at once (the listing says never) -> decide whether the installed unit can be fed from the appliance
 - [ ] 13. RSSI from the cavity where the box sits, board antenna as-is vs. a wire antenna on the modded pad (H11)
 - [ ] 14. Port `lib/bus_uart_esp8266` to a `bus_uart_esp32c3` and add `[env:esp32c3]` to both emulator projects (separate change; the ESPHome implant in `src/esp32-c3-supermini--esphome/` covers node `02`)

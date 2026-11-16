@@ -28,61 +28,61 @@
 
 ## 2. Project skeleton
 
-- [ ] 2.1 Create `src/esp32-c3-supermini--esphome/` with:
+- [x] 2.1 Create `src/esp32-c3-supermini--esphome/` with:
   - `justfile` recipes `build`, `flash`, `logs`, `test`, `check-core`, `clean`;
   - ESPHome run as `uvx esphome==<pinned>`, the newest release at least two weeks old;
   - recipes written as functions/best-practice shell.
-- [ ] 2.2 `freezer-implant.yaml`:
+- [x] 2.2 `freezer-implant.yaml`:
   - `esp32: board: esp32-c3-devkitm-1, framework: esp-idf`;
   - `logger: hardware_uart: USB_SERIAL_JTAG`;
   - `wifi`, `api` (encryption), `ota`;
   - `external_components` (local).
-- [ ] 2.3 `secrets.yaml.example` and `.gitignore` for `secrets.yaml`, `.esphome/` and build output.
-- [ ] 2.4 `components/freezer_bus/` with relative symlinks to `protocol-decoding/esp-smartdevice-emulator-poc/lib/freezer_bus/freezer_bus.{h,cpp}`.
+- [x] 2.3 `secrets.yaml.example` and `.gitignore` for `secrets.yaml`, `.esphome/` and build output.
+- [x] 2.4 `components/freezer_bus/` with relative symlinks to `protocol-decoding/esp-smartdevice-emulator-poc/lib/freezer_bus/freezer_bus.{h,cpp}`.
   `just check-core` verifies that the build tree copy equals the source.
-- [ ] 2.5 Smoke build: an empty component compiles. `just build` passes.
+- [x] 2.5 Smoke build: an empty component compiles. `just build` passes.
 
 ## 3. Node-02 engine (host-tested)
 
-- [ ] 3.1 Engine skeleton: frame input with a µs timestamp, `next_answer()` for slot `02`, a queue with priorities
+- [x] 3.1 Engine skeleton: frame input with a µs timestamp, `next_answer()` for slot `02`, a queue with priorities
   handshake > write > read > idle, and a command and state-snapshot interface.
-- [ ] 3.2 Handshake: hello → `11`, `21`/`22`/`23` → acks, table request `13 00 00 00` and the `12` answer. Unit tests
+- [x] 3.2 Handshake: hello → `11`, `21`/`22`/`23` → acks, table request `13 00 00 00` and the `12` answer. Unit tests
   against the frames in `03-bootup.md`.
-- [ ] 3.3 Start-up: version requests to `7F` and node `01` (2 s timeout), `3C` paged identity reads and string assembly,
+- [x] 3.3 Start-up: version requests to `7F` and node `01` (2 s timeout), `3C` paged identity reads and string assembly,
   first status read.
-- [ ] 3.4 Group `48` writes (D7): text chunking, IP LE32, MAC, `03`→`04`→`05` timing, rewrite on IP change, option off.
-- [ ] 3.5 State model and status read (D6): the eight params with their captured request flags, flag `00` = unknown,
+- [x] 3.4 Group `48` writes (D7): text chunking, IP LE32, MAC, `03`→`04`→`05` timing, rewrite on IP change, option off.
+- [x] 3.5 State model and status read (D6): the eight params with their captured request flags, flag `00` = unknown,
   10 s period, a re-read on non-zero event flags, passive updates from `81` replies and node `0B`'s `14/04`.
-- [ ] 3.6 Writes: SuperFrost, party and set-point (−28…−15). Bodies byte-identical to `02-commands.md`. Refusal rules.
+- [x] 3.6 Writes: SuperFrost, party and set-point (−28…−15). Bodies byte-identical to `02-commands.md`. Refusal rules.
   Confirmation via event plus read-back within 3 s, no resend.
-- [ ] 3.7 Recovery: a hello in any state restarts start-up and clears the queue. Bus-alive tracking (2 s).
-- [ ] 3.8 Host test harness (`just test`) and the closed loop against `fm::Master` (D9): handshake → running, status equals
+- [x] 3.7 Recovery: a hello in any state restarts start-up and clears the queue. Bus-alive tracking (2 s).
+- [x] 3.8 Host test harness (`just test`) and the closed loop against `fm::Master` (D9): handshake → running, status equals
   `captured_params.h`, write reaches the master's table, event re-read, master reset → restart. Also replay captured
   `csv/*_hex.csv` door/alarm frames for the passive paths.
 
 ## 4. ESP32-C3 bus driver
 
-- [ ] 4.1 UART1 at 57600 8N1 on the configured pin: input + open-drain output routed through the GPIO matrix,
+- [x] 4.1 UART1 at 57600 8N1 on the configured pin: input + open-drain output routed through the GPIO matrix,
   open-drain applied after routing, no internal pull-up (D4).
-- [ ] 4.2 Bus task: event-queue reader, BREAK/framing-error slot delimiting, dropping the break `00`, CRC check and counters.
-- [ ] 4.3 Reply path: pre-built answer, timed start (default 420 µs, configurable 250–600 µs), skip and count when late.
-- [ ] 4.4 Echo comparison during our own slot. Auto-disable TX on mismatch, with a reason.
-- [ ] 4.5 Latency statistics (median and max over a window), bus-alive flag.
+- [x] 4.2 Bus task: event-queue reader, BREAK/framing-error slot delimiting, dropping the break `00`, CRC check and counters.
+- [x] 4.3 Reply path: pre-built answer, timed start (default 420 µs, configurable 250–600 µs), skip and count when late.
+- [x] 4.4 Echo comparison during our own slot. Auto-disable TX on mismatch, with a reason.
+- [x] 4.5 Latency statistics (median and max over a window), bus-alive flag.
 - [ ] 4.6 Bench latency check under Wi-Fi load (API log streaming plus an OTA upload). If any answer is > 600 µs or missed
   slots exceed 1 %, switch to the HAL ISR fallback (D4) and record the decision in `design.md`.
 
 ## 5. ESPHome component and entities
 
-- [ ] 5.1 `__init__.py` schema: `bus_pin` (rejects GPIO8/9/18/19), `reply_delay_us` (250–600), `status_interval`,
+- [x] 5.1 `__init__.py` schema: `bus_pin` (rejects GPIO8/9/18/19), `reply_delay_us` (250–600), `status_interval`,
   `network_writes`. Codegen for the component.
-- [ ] 5.2 Component glue: start the driver in `setup()`, a thread-safe command queue, and a state snapshot published in `loop()`.
-- [ ] 5.3 Control entities: switches SuperFrost and Party mode, number Set-point (−28…−15, step 1). No optimistic state;
+- [x] 5.2 Component glue: start the driver in `setup()`, a thread-safe command queue, and a state snapshot published in `loop()`.
+- [x] 5.3 Control entities: switches SuperFrost and Party mode, number Set-point (−28…−15, step 1). No optimistic state;
   snap back on refusal (D8).
-- [ ] 5.4 Status entities: temperature, power-failure temperature, door, door alarm, power-failure alarm, bus connected,
+- [x] 5.4 Status entities: temperature, power-failure temperature, door, door alarm, power-failure alarm, bus connected,
   freezer/node-01 versions, model. Unknown while the bus is down or start-up is incomplete.
-- [ ] 5.5 Diagnostics: Bus transmit switch (on at boot, follows auto-disable), start-up state, latency median/max, CRC/echo/missed counters.
-- [ ] 5.6 Logging (D10): INFO state changes and writes, DEBUG `M` lines compatible with `tools/compare.py`. No secrets in logs.
-- [ ] 5.7 `README.md`: purpose, entities table, `just` recipes, flashing via USB (BOOT held at reset if the port does not
+- [x] 5.5 Diagnostics: Bus transmit switch (on at boot, follows auto-disable), start-up state, latency median/max, CRC/echo/missed counters.
+- [x] 5.6 Logging (D10): INFO state changes and writes, DEBUG `M` lines compatible with `tools/compare.py`. No secrets in logs.
+- [x] 5.7 `README.md`: purpose, entities table, `just` recipes, flashing via USB (BOOT held at reset if the port does not
   show up), configuration options.
 
 ## 6. Wiring documentation

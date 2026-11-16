@@ -15,3 +15,10 @@ __pycache__/
 docs/smart-box-images/signal-*
 .pio/
 .pio.*/
+
+# ESPHome: real credentials never go into git (use secrets.yaml.example)
+**/secrets.yaml
+**/.esphome/
+
+# JetBrains IDE
+.idea/

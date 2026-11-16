@@ -150,6 +150,12 @@ PoC's `M <t_us> <slot> <lat> <crc> <hex> | <decoded>` format (reuse `lb::describ
   not a blocker for the emulator bench.
 - [Sharing the bus with the emulator: both boards USB-powered from one laptop] → Common ground through USB. The
   emulator's WIRING safety notes apply. Never connect pads 1/3.
+- [The handshake order follows the spec and the emulator bench (ack `21`, ack `22`, table request, ack `23`), but the
+  real box in `freezer_bootup` sends the table request in place of the `22` ack, acks `22` after the `12` answer, and does
+  not ack `23`] → Both orders work against `fm::Master`. If the real freezer is strict, switch to the captured order;
+  that is a few lines in the engine's frame handling.
+- [The engine sends the `48` writes after the start-up reads and only once Wi-Fi is up; the box wrote `48/00 = 03`
+  before its reads] → No effect on the emulator. Check on the real freezer.
 - [The freezer emulator does not emulate nodes `01`/`0B`] → Passive door updates and node-`01` traffic cannot be tested
   on the bench. They are covered by host tests with captured frames (`protocol-decoding/csv/*_hex.csv` vectors).
 

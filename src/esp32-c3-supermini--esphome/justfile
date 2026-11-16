@@ -4,7 +4,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # pinned ESPHome release (newest one at least two weeks old, 2026.10.0 uploaded 2026-10-21)
 esphome_version := "2026.10.0"
-esphome := "uvx esphome==" + esphome_version
+esphome := "uvx --from esphome==" + esphome_version + " esphome"
 config := "freezer-implant.yaml"
 name := "freezer-implant"
 # empty PORT = let ESPHome pick (USB serial or OTA)
