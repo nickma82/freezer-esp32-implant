@@ -1,5 +1,10 @@
 # freezer-esp32
 
+<p align="center">
+  <img src="docs/project-logo/Smart%20Freezer%20Home%20Assistant%20Badge2.png" width="300"
+       alt="Smart Freezer badge: a chest freezer reading -18 °C, an ESP32 SuperMini board and the Home Assistant logo">
+</p>
+
 Reverse engineering the bus between a smart appliance and its **SmartDeviceBox** (the Wi-Fi module), so that an
 ESP32 can replace the box entirely and talk to Home Assistant locally, without the vendor's cloud.
 
