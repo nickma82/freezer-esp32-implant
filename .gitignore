@@ -22,3 +22,6 @@ docs/smart-box-images/signal-*
 
 # JetBrains IDE
 .idea/
+
+# local reference PDFs, not for the remote
+docs/*.pdf
