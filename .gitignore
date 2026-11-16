@@ -13,6 +13,7 @@ __pycache__/
 **/freezer-bootup-fullduration.csv
 *.xcf
 docs/smart-box-images/signal-*
+docs/original-smartdevice-box/Screenshot_20261101_212319.png
 .pio/
 .pio.*/
 
