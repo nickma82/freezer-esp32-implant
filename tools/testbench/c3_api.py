@@ -22,7 +22,8 @@ def api_key_from_secrets(path: Path) -> str:
 
 
 class C3Api:
-    def __init__(self, host: str, noise_psk: str, port: int = 6053):
+    def __init__(self, host: str, noise_psk: str, port: int = 6053, log_level: LogLevel = LogLevel.LOG_LEVEL_INFO):
+        self.log_level = log_level
         self.client = APIClient(host, port, None, noise_psk=noise_psk)
         self.by_name: dict[str, object] = {}  # entity name -> EntityInfo
         self.by_key: dict[int, object] = {}
@@ -36,7 +37,7 @@ class C3Api:
             self.by_name[e.name] = e
             self.by_key[e.key] = e
         self.client.subscribe_states(self._on_state)
-        self.client.subscribe_logs(self._on_log, log_level=LogLevel.LOG_LEVEL_INFO)
+        self.client.subscribe_logs(self._on_log, log_level=self.log_level)
 
     async def disconnect(self) -> None:
         await self.client.disconnect()
