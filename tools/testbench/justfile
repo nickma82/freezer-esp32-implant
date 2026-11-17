@@ -21,6 +21,10 @@ test-emu2c3 *ARGS:
 test-c32emu *ARGS:
     {{tb}} run --suite c32emu {{ARGS}}
 
+# resilience: the C3 reboots while the emulator runs on and must rejoin by itself (~1 min)
+test-resilience *ARGS:
+    {{tb}} run --suite resilience {{ARGS}}
+
 # list the test cases
 list:
     {{tb}} list

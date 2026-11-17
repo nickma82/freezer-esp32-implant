@@ -5,7 +5,7 @@
 # ///
 """Testbench: freezer emulator (ESP8266, serial console) <-> ESP32-C3 implant (ESPHome API).
 
-  testbench.py run [--suite emu2c3|c32emu|all] [--only NAME ...]   run test cases, write a report
+  testbench.py run [--suite emu2c3|c32emu|resilience|all] [--only NAME ...]   run test cases, write a report
   testbench.py list                                                  list test cases
   testbench.py state                                                 show the C3's entity states + emulator status
   testbench.py emu "a 1"                                             send one emulator console command
@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from c3_api import C3Api, api_key_from_secrets
-from cases import CASES, C3Log, Emu, EmuLine, Set, State
+from cases import CASES, C3Log, Emu, EmuLine, NoEmuLine, RestartC3, Set, State
 from emu_console import EmuConsole
 
 REPO = Path(__file__).resolve().parents[2]
@@ -94,12 +94,15 @@ async def do_steps(b: Bench, steps: list) -> None:
             await b.emu_cmd(s.cmd)
         elif isinstance(s, Set):
             b.c3.set(s.entity, s.value)
+        elif isinstance(s, RestartC3):
+            await b.c3.restart()
         else:
             raise TypeError(s)
 
 
 async def check(b: Bench, c, timeout: float, emu_since: int, log_since: int) -> dict:
     t0 = time.time()
+    timeout = getattr(c, "timeout", None) or timeout
     if isinstance(c, State):
         ok = await b.c3.wait_state(c.entity, c.value, timeout)
         got = b.c3.state(c.entity)
@@ -112,6 +115,10 @@ async def check(b: Bench, c, timeout: float, emu_since: int, log_since: int) -> 
         line = await b.c3.wait_log(c.pattern, timeout, log_since)
         ok = line is not None
         text, evidence = f"C3 log /{c.pattern}/", line or "not seen"
+    elif isinstance(c, NoEmuLine):
+        m = b.emu.find(c.pattern, emu_since)
+        ok = m is None
+        text, evidence = f"no emulator line /{c.pattern}/", m.string if m else "none seen"
     else:
         raise TypeError(c)
     return {"check": text, "passed": ok, "evidence": evidence, "seconds": round(time.time() - t0, 1)}
@@ -146,8 +153,13 @@ def health_snapshot(b: Bench) -> dict:
 
 
 def health_delta(before: dict, after: dict) -> dict:
-    """Increase of each C3 counter during the run (the counters are cumulative since the C3 booted)."""
-    return {n: (after[n] or 0) - (before[n] or 0) for n in before}
+    """Increase of each C3 counter during the run (the counters are cumulative since the C3 booted).
+    A counter below its start value means the C3 rebooted during the run: then its value since that reboot counts."""
+    delta = {}
+    for n in before:
+        b, a = before[n] or 0, after[n] or 0
+        delta[n] = a - b if a >= b else a
+    return delta
 
 
 def emu_health(b: Bench, since: int) -> dict:
@@ -261,7 +273,7 @@ def main() -> int:
     p.add_argument("--secrets", default=str(DEFAULT_SECRETS), help="secrets.yaml with api_key")
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
-    r.add_argument("--suite", choices=["emu2c3", "c32emu", "all"], default="all")
+    r.add_argument("--suite", choices=["emu2c3", "c32emu", "resilience", "all"], default="all")
     r.add_argument("--only", nargs="+", metavar="NAME")
     r.add_argument("--timeout", type=float, default=20.0, help="seconds per check (C3 reads every 10 s)")
     r.add_argument("--out", help="report directory (default tools/testbench/results/<timestamp>)")

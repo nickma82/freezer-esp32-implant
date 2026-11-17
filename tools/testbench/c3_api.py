@@ -24,11 +24,33 @@ def api_key_from_secrets(path: Path) -> str:
 class C3Api:
     def __init__(self, host: str, noise_psk: str, port: int = 6053, log_level: LogLevel = LogLevel.LOG_LEVEL_INFO):
         self.log_level = log_level
-        self.client = APIClient(host, port, None, noise_psk=noise_psk)
+        self._address = (host, port, noise_psk)
+        self.client = self._new_client()
         self.by_name: dict[str, object] = {}  # entity name -> EntityInfo
         self.by_key: dict[int, object] = {}
         self.states: dict[str, object] = {}  # entity name -> latest value (None = unknown / unavailable)
-        self.logs: list[tuple[float, str]] = []
+        self.logs: list[tuple[float, str]] = []  # kept across restart(), so log_mark() indices stay valid
+
+    def _new_client(self) -> APIClient:
+        host, port, noise_psk = self._address
+        return APIClient(host, port, None, noise_psk=noise_psk)
+
+    async def restart(self, button: str = "Restart", timeout: float = 60.0) -> None:
+        """Reboot the C3 with its restart button and reconnect once it is back (states start over as unknown)."""
+        self.client.button_command(self.by_name[button].key)
+        await asyncio.sleep(3.0)  # the C3 closes the connection and reboots
+        await self.disconnect()
+        self.states.clear()
+        end = time.time() + timeout
+        while True:
+            self.client = self._new_client()
+            try:
+                await self.connect()
+                return
+            except Exception:
+                if time.time() >= end:
+                    raise
+                await asyncio.sleep(2.0)
 
     async def connect(self) -> None:
         await self.client.connect(login=True)
@@ -40,7 +62,10 @@ class C3Api:
         self.client.subscribe_logs(self._on_log, log_level=self.log_level)
 
     async def disconnect(self) -> None:
-        await self.client.disconnect()
+        try:
+            await self.client.disconnect()
+        except Exception:  # already gone (the C3 rebooted)
+            pass
 
     def _on_state(self, st) -> None:
         e = self.by_key.get(st.key)
@@ -86,12 +111,18 @@ class C3Api:
     # ---- writing ------------------------------------------------------------------------------------------------
 
     def set(self, name: str, value) -> None:
-        """Switch -> bool, number -> float. Same path Home Assistant uses."""
+        """Switch -> bool, number -> float, select -> option text (a number n picks the option "n °C").
+        Same path Home Assistant uses."""
         e = self.by_name[name]
         kind = type(e).__name__
         if kind == "SwitchInfo":
             self.client.switch_command(e.key, bool(value))
         elif kind == "NumberInfo":
             self.client.number_command(e.key, float(value))
+        elif kind == "SelectInfo":
+            option = value if isinstance(value, str) else f"{int(value)} °C"
+            if option not in e.options:
+                raise ValueError(f"'{option}' is not an option of '{name}': {', '.join(e.options)}")
+            self.client.select_command(e.key, option)
         else:
             raise ValueError(f"'{name}' ({kind}) cannot be set")
