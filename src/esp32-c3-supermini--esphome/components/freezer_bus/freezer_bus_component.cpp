@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esphome/core/controller_registry.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
@@ -16,6 +17,9 @@ namespace esphome {
 namespace freezer_bus {
 
 static const char *const TAG = "freezer";
+#ifdef USE_SELECT
+static constexpr int SETPOINT_UNKNOWN = -1000;  // l_setpoint_sel_ value while the set-point is unknown
+#endif
 
 static const char *phase_name(n02::Phase p) {
   switch (p) {
@@ -54,6 +58,16 @@ void FreezerSwitch::write_state(bool state) { this->parent_->command_switch(this
 #ifdef USE_NUMBER
 void FreezerNumber::control(float value) { this->parent_->command_setpoint((int) lroundf(value)); }
 #endif
+#ifdef USE_SELECT
+void FreezerSelect::control(size_t index) { this->parent_->command_setpoint(SETPOINT_MIN_C + (int) index); }
+
+void FreezerSelect::publish_unknown() {
+  this->set_has_state(false);
+#ifdef USE_CONTROLLER_REGISTRY
+  ControllerRegistry::notify_select_update(this);
+#endif
+}
+#endif
 
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -83,6 +97,9 @@ void FreezerBusComponent::dump_config() {
 #endif
 #ifdef USE_NUMBER
   LOG_NUMBER("  ", "Set-point", this->num_setpoint_);
+#endif
+#ifdef USE_SELECT
+  LOG_SELECT("  ", "Set-point", this->sel_setpoint_);
 #endif
 #ifdef USE_SENSOR
   LOG_SENSOR("  ", "Temperature", this->s_temperature_);
@@ -412,6 +429,21 @@ void FreezerBusComponent::publish_(const BusSnapshot &s, bool force) {
       this->l_setpoint_.valid = true;
       this->l_setpoint_.v = v;
       this->num_setpoint_->publish_state(v);
+    }
+  }
+#endif
+#ifdef USE_SELECT
+  if (this->sel_setpoint_ != nullptr) {
+    const int v = (ok && st.setpoint.known) ? (int) st.setpoint.v : SETPOINT_UNKNOWN;
+    if (force || !this->l_setpoint_sel_.valid || this->l_setpoint_sel_.v != v) {
+      this->l_setpoint_sel_.valid = true;
+      this->l_setpoint_sel_.v = v;
+      // a value outside the options (set at the freezer's own panel beyond -28..-15?) shows as unknown, never wrong
+      const int index = v - FreezerSelect::SETPOINT_MIN_C;
+      if (v != SETPOINT_UNKNOWN && index >= 0 && this->sel_setpoint_->has_index((size_t) index))
+        this->sel_setpoint_->publish_degc(v);
+      else
+        this->sel_setpoint_->publish_unknown();
     }
   }
 #endif

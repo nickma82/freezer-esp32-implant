@@ -60,7 +60,8 @@ switch:
     bus_transmit:
       name: "Bus transmit"
 
-number:
+# set-point as a dropdown of the 14 values -28..-15 degC; the freezer_bus number platform (setpoint) is the alternative
+select:
   - platform: freezer_bus
     setpoint:
       name: "Set-point"

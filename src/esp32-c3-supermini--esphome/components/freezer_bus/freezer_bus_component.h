@@ -11,6 +11,9 @@
 #ifdef USE_NUMBER
 #include "esphome/components/number/number.h"
 #endif
+#ifdef USE_SELECT
+#include "esphome/components/select/select.h"
+#endif
 #ifdef USE_SENSOR
 #include "esphome/components/sensor/sensor.h"
 #endif
@@ -55,6 +58,23 @@ class FreezerNumber : public number::Number {
 };
 #endif
 
+#ifdef USE_SELECT
+// Set-point as a dropdown: option index i = SETPOINT_MIN_C + i degC (the options come from select.py).
+// control() only enqueues the write; the selection follows the freezer's read-back.
+class FreezerSelect : public select::Select {
+ public:
+  static constexpr int SETPOINT_MIN_C = -28;
+  void set_parent(FreezerBusComponent *p) { this->parent_ = p; }
+  void publish_degc(int degc) { this->publish_state((size_t) (degc - SETPOINT_MIN_C)); }
+  // Select::publish_state() cannot express "unknown"; Home Assistant shows unknown for missing_state
+  void publish_unknown();
+
+ protected:
+  void control(size_t index) override;
+  FreezerBusComponent *parent_{nullptr};
+};
+#endif
+
 class FreezerBusComponent : public Component {
  public:
   void set_bus_pin(uint8_t pin) { this->bus_pin_ = pin; }
@@ -69,6 +89,9 @@ class FreezerBusComponent : public Component {
 #endif
 #ifdef USE_NUMBER
   void set_setpoint_number(FreezerNumber *n) { this->num_setpoint_ = n; }
+#endif
+#ifdef USE_SELECT
+  void set_setpoint_select(FreezerSelect *s) { this->sel_setpoint_ = s; }
 #endif
 #ifdef USE_SENSOR
   void set_temperature_sensor(sensor::Sensor *s) { this->s_temperature_ = s; }
@@ -148,6 +171,10 @@ class FreezerBusComponent : public Component {
 #ifdef USE_NUMBER
   FreezerNumber *num_setpoint_{nullptr};
   Last<float> l_setpoint_;
+#endif
+#ifdef USE_SELECT
+  FreezerSelect *sel_setpoint_{nullptr};
+  Last<int> l_setpoint_sel_;  // degC, or SETPOINT_UNKNOWN
 #endif
 #ifdef USE_SENSOR
   sensor::Sensor *s_temperature_{nullptr}, *s_pf_temperature_{nullptr}, *s_lat_median_{nullptr}, *s_lat_max_{nullptr},

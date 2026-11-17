@@ -66,7 +66,7 @@ refused. A refused or unconfirmed write logs a warning and re-publishes the free
 | `superfrost` | switch | `0C/00` mode (4 = on, 1 = off) | write `0C/00 = 04` / `01` |
 | `party` | switch | `08/02` (2 = on, 0 = off) | write `08/02 = 02` / `00` |
 | `bus_transmit` | switch (config) | engine `tx_enabled` | on at every boot; turns off by itself on an echo mismatch; not restored |
-| `setpoint` | number, -28..-15 degC, step 1, box | `0C/06` low byte | write `0C/06`; range beyond the verified -18..-16 is the owner's choice |
+| `setpoint` | select (dropdown `-28 °C` .. `-15 °C`) | `0C/06` low byte | write `0C/06`; unknown if the freezer reports a value outside the options; alternative: `number:` platform `setpoint` (box, -28..-15, step 1); range beyond the verified -18..-16 is the owner's choice |
 | `temperature` | sensor, degC | `0C/14` | |
 | `power_fail_temperature` | sensor, degC | `0C/12` | unknown if the freezer answers flag `00` |
 | `door` | binary sensor (door) | `0C/31` and node `0B`'s push `14/04` | |
