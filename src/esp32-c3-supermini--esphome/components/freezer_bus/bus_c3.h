@@ -133,7 +133,6 @@ class BusC3 {
   uint64_t cur_t_ = 0;
   bool cur_overflow_ = false;
   bool in_slot_ = false;        // a BREAK was seen: bytes belong to a slot
-  bool fe_pending_ = false;     // a FRAME_ERR event since the last BREAK (the 00 byte of the BREAK is in the data)
   bool zero_pending_ = false;   // the BREAK's 00 byte has not been attributed yet: drop a leading 00
   int32_t cur_lat_ = -1;
 

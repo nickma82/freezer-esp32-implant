@@ -181,7 +181,6 @@ void BusC3::on_byte(uint8_t b, uint64_t t) {
 }
 
 void BusC3::on_frame_error() {
-  this->fe_pending_ = true;
   // a framing error while our own answer is on the wire = the line is not what we drive
   if (this->tx_active_) this->echo_mismatch(3, (uint16_t) this->tx_echoed_, 0xFFFF, 0xFFFF);
 }
@@ -197,12 +196,14 @@ void BusC3::on_overflow() {
   if (this->tx_active_) this->echo_mismatch(1, (uint16_t) this->tx_echoed_, 0xFFFF, 0xFFFF);
 }
 
-// The completed slot: a BREAK ends it. Order of the UART events at a BREAK is: DATA(00), FRAME_ERR, BREAK, so the 00
-// of the BREAK sits at the end of the previous slot's bytes and is removed here (only if a FRAME_ERR was reported:
-// a legitimate trailing 00 of a frame is kept). If the 00 arrives late instead, zero_pending_ drops it as the first byte.
+// The completed slot: a BREAK ends it. The UART reports every BREAK as a 00 byte, and on the C3 that 00 arrives
+// before the BREAK event, so it sits at the end of the previous slot's bytes and is removed here. A FRAME_ERR is not
+// reliably reported before the BREAK (bench 2026-11-17: never), so it is not required. A legitimate trailing 00 of a
+// frame survives, since only the one extra 00 is dropped. If the 00 arrives late instead, zero_pending_ drops it as the
+// first byte.
 void BusC3::finish_frame() {
   bool stripped = false;
-  if (this->in_slot_ && this->fe_pending_ && this->cur_n_ >= 2 && this->cur_[this->cur_n_ - 1] == 0x00) {
+  if (this->in_slot_ && this->cur_n_ >= 2 && this->cur_[this->cur_n_ - 1] == 0x00) {
     this->cur_n_--;
     stripped = true;
   }
@@ -231,7 +232,6 @@ void BusC3::on_break() {
   this->cur_n_ = 0;
   this->cur_overflow_ = false;
   this->in_slot_ = true;
-  this->fe_pending_ = false;
   this->tx_len_ = 0;
   this->tx_echoed_ = 0;
   // pre-build the answer for the next slot 02 right away (the slot byte follows >= one byte time later)
