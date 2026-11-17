@@ -45,7 +45,7 @@ external_components:
     components: [freezer_bus]
 
 freezer_bus:
-  id: freezer_bus
+  id: bus
   bus_pin: GPIO3  # TX+RX open-drain on UART1, 100 ohm series resistor
   # reply_delay_us: 420      # first answer byte this long after the slot byte (250..600)
   # status_interval: 10s     # periodic read of the freezer state
