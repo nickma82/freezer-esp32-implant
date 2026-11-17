@@ -1,0 +1,38 @@
+# Testbench: freezer emulator (ESP8266, /dev/ttyUSB0) <-> ESP32-C3 implant (ESPHome API, freezer-implant.local)
+# Override with EMU_PORT=... / C3_HOST=... in the environment.
+
+emu_port := env("EMU_PORT", "/dev/ttyUSB0")
+c3_host := env("C3_HOST", "freezer-implant.local")
+tb := "uv run --script " + justfile_directory() / "testbench.py" + " --emu-port " + emu_port + " --host " + c3_host
+
+# list the recipes
+default:
+    @just --list --justfile {{justfile()}}
+
+# run all test cases (both directions)
+test *ARGS:
+    {{tb}} run {{ARGS}}
+
+# emulator -> C3: freezer-side changes (door, alarms, temperature, ...) must show up on the C3
+test-emu2c3 *ARGS:
+    {{tb}} run --suite emu2c3 {{ARGS}}
+
+# C3 -> emulator: writes from Home Assistant (set-point, SuperFrost, party) must reach the freezer
+test-c32emu *ARGS:
+    {{tb}} run --suite c32emu {{ARGS}}
+
+# list the test cases
+list:
+    {{tb}} list
+
+# show all C3 entity states and the emulator's status line
+state:
+    {{tb}} state
+
+# send one emulator console command, e.g. just emu "a 1"
+emu COMMAND:
+    {{tb}} emu "{{COMMAND}}"
+
+# set one C3 entity like Home Assistant does, e.g. just set "Set-point" -20
+set ENTITY VALUE:
+    {{tb}} set "{{ENTITY}}" "{{VALUE}}"
