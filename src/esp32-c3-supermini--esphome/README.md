@@ -76,7 +76,8 @@ refused. A refused or unconfirmed write logs a warning and re-publishes the free
 | `freezer_version` | text sensor (diag) | service `16` answer | e.g. `TOD 5-600\|SW 1-86-7\|BUS 1-4-0` |
 | `node01_version` | text sensor (diag) | node `01` version answer | unknown if node `01` does not answer |
 | `model` | text sensor (diag) | group `3C` records `01`-`03` | |
-| `phase` | text sensor (diag) | engine phase | `waiting`, `handshake`, `startup`, `running` |
+| `phase` | text sensor (diag) | engine phase | `waiting`, `handshake`, `startup`, `running`; after 30 s in `waiting` with the freezer active the start-up reads begin without a hello (rejoin after a board restart) |
+| `restart` | button (diag) | ESPHome `restart` | reboots only the board; it rejoins about 30 s later (the freezer sends no new hello) |
 | `latency_median`, `latency_max` | sensor (diag), us | driver | over the last 64 answers; slot byte read -> TX FIFO filled |
 | `crc_errors` | sensor (diag) | engine | frames with a bad CRC |
 | `echo_mismatches` | sensor (diag) | driver | answers whose echo differed (transmit is switched off) |

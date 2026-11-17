@@ -437,6 +437,62 @@ void test_bus_alive_tracking() {
   TEST_ASSERT_FALSE(B->e.bus_alive());
 }
 
+// ---- rejoin without a hello (the C3 restarted while the freezer kept running) ---------------------------------
+// The freezer's 1 s event block as the emulator sends it (taken from the C3's log on the testbench).
+static const char* EVENT_BLOCK = "FF 80 7F 24 01 20 00 00 80 00 00 00 00 00 01 80 00 00 00 00 00 02 80 00 00 00 00 00 "
+                                 "03 80 00 00 00 00 00 04 20 F0 65 B4";
+
+// A running freezer that sends no hello: an event block and a slot 02 every 570 ms, for `ms`.
+static void freezer_without_hello(Bus& b, uint32_t ms) {
+  for (uint32_t t = 0; t < ms; t += 570) {
+    b.advance(570);
+    b.frame(EVENT_BLOCK);
+    b.slot02();
+  }
+}
+
+void test_rejoin_after_30s_of_freezer_traffic_without_hello() {
+  freezer_without_hello(*B, 29000);
+  TEST_ASSERT_EQUAL((int)Phase::Waiting, (int)B->e.phase());
+  B->expect_sent(IDLE);
+  freezer_without_hello(*B, 1500);
+  TEST_ASSERT_EQUAL((int)Phase::Startup, (int)B->e.phase());
+  TEST_ASSERT_EQUAL_UINT32(1, B->e.counters().rejoins);
+  TEST_ASSERT_EQUAL_UINT32(0, B->e.counters().hellos);
+  B->expect_sent("FF 02 06 01 00 56 36");  // the first start-up read (freezer version), no hello reply
+}
+
+void test_no_rejoin_without_freezer_traffic_or_with_tx_off() {
+  for (int i = 0; i < 120; i++) { B->advance(570); B->slot02(); }  // bus alive, but the freezer never speaks
+  TEST_ASSERT_EQUAL((int)Phase::Waiting, (int)B->e.phase());
+  B->e.set_tx_enabled(false);
+  freezer_without_hello(*B, 60000);
+  TEST_ASSERT_EQUAL((int)Phase::Waiting, (int)B->e.phase());
+  TEST_ASSERT_EQUAL_UINT32(0, B->e.counters().rejoins);
+}
+
+void test_unanswered_rejoin_returns_to_waiting_and_retries() {
+  freezer_without_hello(*B, 31000);
+  TEST_ASSERT_EQUAL((int)Phase::Startup, (int)B->e.phase());
+  freezer_without_hello(*B, 15000);  // every start-up read times out
+  TEST_ASSERT_EQUAL((int)Phase::Waiting, (int)B->e.phase());
+  TEST_ASSERT_FALSE(B->e.state().temperature.known);
+  freezer_without_hello(*B, 20000);
+  TEST_ASSERT_EQUAL((int)Phase::Waiting, (int)B->e.phase());
+  TEST_ASSERT_EQUAL_UINT32(1, B->e.counters().rejoins);
+  freezer_without_hello(*B, 15000);  // 30 s after the failure: the next try
+  TEST_ASSERT_EQUAL_UINT32(2, B->e.counters().rejoins);
+}
+
+void test_hello_during_rejoin_runs_the_full_handshake() {
+  freezer_without_hello(*B, 31000);
+  TEST_ASSERT_EQUAL((int)Phase::Startup, (int)B->e.phase());
+  B->frame("82 82 7F 01 01 00 C9 F4");
+  TEST_ASSERT_EQUAL((int)Phase::Handshake, (int)B->e.phase());
+  B->slot02();
+  B->expect_sent(HELLO_REPLY);
+}
+
 // ---- group 48 ---------------------------------------------------------------------------------------------
 static void set_net(Bus& b, bool conn, uint8_t d, const char* ssid) {
   const uint8_t ip[4] = {192, 168, 1, d};
@@ -595,6 +651,10 @@ int main() {
   RUN_TEST(test_write_unconfirmed_without_readback_in_3s);
   RUN_TEST(test_hello_restart_clears_queue_and_values);
   RUN_TEST(test_bus_alive_tracking);
+  RUN_TEST(test_rejoin_after_30s_of_freezer_traffic_without_hello);
+  RUN_TEST(test_no_rejoin_without_freezer_traffic_or_with_tx_off);
+  RUN_TEST(test_unanswered_rejoin_returns_to_waiting_and_retries);
+  RUN_TEST(test_hello_during_rejoin_runs_the_full_handshake);
   RUN_TEST(test_network_writes_sequence);
   RUN_TEST(test_network_05_is_5s_after_04);
   RUN_TEST(test_network_waits_for_wifi_and_rewrites_on_ip_change);

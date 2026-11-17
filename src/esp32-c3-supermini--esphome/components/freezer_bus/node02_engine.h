@@ -32,12 +32,16 @@ constexpr uint32_t DEFAULT_STATUS_PERIOD_MS = 10000; // periodic status read
 constexpr uint32_t BUS_ALIVE_MS = 2000;              // no slot 02 for this long = bus not alive
 constexpr uint32_t NET_FINAL_DELAY_MS = 5000;        // 48/00 = 05 this long after 48/00 = 04
 constexpr uint32_t REPLY_TIMEOUT_MS = 1500;          // a start-up/status request without a reply is given up after this
+// The freezer sends its hello only at its own power-up. A C3 that restarts while the freezer keeps running (OTA update,
+// watchdog, brownout) would wait for it forever. So after this long in Waiting with the freezer active on the bus, the
+// start-up reads begin without the handshake (a "rejoin"); if the freezer answers none of them, Waiting again.
+constexpr uint32_t REJOIN_AFTER_MS = 30000;
 constexpr size_t MAX_ANSWER = 96;                    // longest body we ever build (box messages are <= ~88 bytes)
 constexpr size_t SSID_MAX = 32;
 constexpr size_t NET_TEXT_MAX = 32;                  // 48/04..0B hold 8 x 4 bytes; "<ip>@<ssid>" is cut to this
 
 enum class Phase : uint8_t {
-  Waiting,    // no hello from the freezer yet: idle acks only
+  Waiting,    // no hello from the freezer yet: idle acks only (rejoin after REJOIN_AFTER_MS)
   Handshake,  // hello received, handshake answers pending
   Startup,    // versions, 3C identity, first status read
   Running     // start-up reads done: commands accepted
@@ -93,6 +97,7 @@ struct Counters {
   uint32_t frames = 0;             // on_frame() calls
   uint32_t crc_errors = 0;         // frames (other than slot 02) with a bad CRC
   uint32_t hellos = 0;             // hellos to node 02 (= start-ups)
+  uint32_t rejoins = 0;            // start-ups without a hello (see REJOIN_AFTER_MS)
   uint32_t tx_slots = 0;           // on_slot02_result(true) with a message pending
   uint32_t missed_slots = 0;       // on_slot02_result(false) with a message pending
   uint32_t writes_sent = 0;        // user writes on the bus
@@ -162,6 +167,8 @@ class Engine {
   void commit();
   void handle_frame(const lb::Msg& m);
   void restart_handshake();
+  void rejoin();
+  void reset_session();
   bool apply_param(const lb::Rec& r);
   void apply_values(const lb::Msg& m);
   void on_event_block(const lb::Msg& m);
@@ -196,6 +203,13 @@ class Engine {
   // handshake
   HqItem hq_[6];
   uint8_t hq_h_ = 0, hq_n_ = 0;
+
+  // rejoin without a hello
+  bool seen_freezer_ = false;
+  uint64_t last_freezer_ = 0;   // last good frame from the freezer (node 7F)
+  uint64_t waiting_since_ = 0;  // start of the current stretch in Waiting with the freezer active
+  bool rejoin_ = false;         // the current start-up is a rejoin
+  bool su_answered_ = false;    // the freezer answered at least one start-up read
 
   // answer offered by build_answer() and what it is
   uint8_t ans_[MAX_ANSWER];

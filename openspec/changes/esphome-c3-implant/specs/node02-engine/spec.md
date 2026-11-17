@@ -145,3 +145,22 @@ box's "degraded" behaviour after outages of minutes SHALL NOT be copied.
 #### Scenario: Long outage
 - **WHEN** the freezer emulator is stopped for 5 minutes and then restarted
 - **THEN** the board completes the handshake, re-reads the status model, and accepts writes again without a reset
+
+### Requirement: Rejoin after a board restart
+The freezer sends its hello only at its own power-up, so a board that restarts while the freezer keeps running (OTA
+update, watchdog, brownout, replugged) gets no hello. When the board has been in phase `waiting` for 30 s while the bus
+is alive, frames from the freezer arrive and transmit is enabled, it SHALL run the start-up reads without the handshake
+(a rejoin) and then continue as after a normal start-up. If the freezer answers none of the start-up reads, the board
+SHALL return to `waiting` and try again 30 s later. A hello SHALL still restart the full start-up at any time, a rejoin
+in progress included.
+
+Whether the real freezer accepts reads and writes from a node `02` that skipped the handshake is open
+(`protocol-decoding/04-open-questions.md` question 14); the first rejoin at the freezer answers it.
+
+#### Scenario: Board restarted, freezer kept running
+- **WHEN** the board restarts while the freezer emulator keeps running and sends no hello
+- **THEN** about 30 s after booting the board reads versions, identification and status, reaches `running`, and accepts writes
+
+#### Scenario: Freezer ignores the rejoin
+- **WHEN** the freezer answers none of the start-up reads of a rejoin
+- **THEN** the board returns to `waiting`, its values stay unknown, and the next rejoin follows 30 s later

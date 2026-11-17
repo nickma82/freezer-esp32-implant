@@ -82,6 +82,11 @@ void Engine::tick(uint64_t now_us) {
     change();
     if (!alive) drop_user_writes();  // a write must not go out long after the user asked
   }
+  if (phase_ == Phase::Waiting) {
+    const bool freezer_active = alive && seen_freezer_ && now_ - last_freezer_ <= ms_to_us(BUS_ALIVE_MS);
+    if (!freezer_active || !tx_enabled_) waiting_since_ = now_;
+    else if (now_ - waiting_since_ >= ms_to_us(REJOIN_AFTER_MS)) rejoin();
+  }
   if (await_ != Await::None && now_ >= await_deadline_) {
     Await a = await_;
     complete_await(a);  // gives up: the step is skipped, a missing answer must not block start-up
@@ -115,6 +120,7 @@ void Engine::on_frame(const uint8_t* f, size_t n, uint64_t t) {
 }
 
 void Engine::handle_frame(const lb::Msg& m) {
+  if (m.src == NODE_FREEZER) { seen_freezer_ = true; last_freezer_ = now_; }
   if (m.slot == SLOT_REPLY && m.dst == SLOT_REPLY && m.src == NODE_FREEZER) {
     switch (m.svc) {
       case 0x01:  // hello: (re)start everything, whatever the phase
@@ -152,6 +158,7 @@ void Engine::on_version(const lb::Msg& m) {
     char t[sizeof st_.freezer_version];
     copy_str(t, sizeof t, m.raw + 6, len);
     if (strcmp(t, st_.freezer_version)) { memcpy(st_.freezer_version, t, sizeof t); change(); }
+    su_answered_ = true;
     complete_await(Await::Version);
   } else if (m.src == NODE_01 && node01_open_ && m.dst == SLOT_REPLY &&
              now_ - node01_t_ <= ms_to_us(NODE01_VERSION_WINDOW_MS)) {
@@ -225,6 +232,7 @@ void Engine::apply_values(const lb::Msg& m) {
       }
     }
   }
+  if (any_ident || any_status) su_answered_ = true;
   if (any_ident) { ident_changed(); complete_await(Await::Ident); }
   if (any_status) complete_await(Await::Status);
 }
@@ -259,17 +267,42 @@ void Engine::su_advance() {
   su_step_++;
   su_sent_ = false;
   await_ = Await::None;
-  if (su_step_ >= SU_END) { phase_ = Phase::Running; change(); }
+  if (su_step_ < SU_END) return;
+  // A rejoin the freezer did not answer at all: it does not talk to us without the handshake (or is not there).
+  // Back to Waiting, the next attempt follows REJOIN_AFTER_MS later.
+  const bool failed_rejoin = rejoin_ && !su_answered_;
+  phase_ = failed_rejoin ? Phase::Waiting : Phase::Running;
+  waiting_since_ = now_;
+  rejoin_ = false;
+  change();
 }
 
 // ---- recovery -------------------------------------------------------------------------------------------------
 void Engine::restart_handshake() {
   cnt_.hellos++;
+  reset_session();
+  hq_[hq_n_++] = HqItem{Hq::Hello, 0};
+  phase_ = Phase::Handshake;
+  change();
+}
+
+// The C3 restarted while the freezer kept running: no hello will come, so do the start-up reads without it.
+void Engine::rejoin() {
+  cnt_.rejoins++;
+  reset_session();
+  rejoin_ = true;
+  phase_ = Phase::Startup;
+  change();
+}
+
+// Everything a new start-up begins without: queues, outstanding requests, values and the start-up/network progress.
+void Engine::reset_session() {
   drop_user_writes();
   if (confirm_.active) finish_confirm(WriteOutcome::Unconfirmed);
   hq_h_ = 0;
   hq_n_ = 0;
-  hq_[hq_n_++] = HqItem{Hq::Hello, 0};
+  rejoin_ = false;
+  su_answered_ = false;
   inflight_ = Inflight::None;
   await_ = Await::None;
   su_step_ = SU_VER;
@@ -282,8 +315,6 @@ void Engine::restart_handshake() {
   Opt* all[] = {&st_.mode, &st_.party, &st_.setpoint, &st_.temperature,
                 &st_.door_open, &st_.door_alarm, &st_.power_fail_alarm, &st_.power_fail_temp};
   for (Opt* o : all) set_opt(*o, false, 0);
-  phase_ = Phase::Handshake;
-  change();
 }
 
 // ---- commands -------------------------------------------------------------------------------------------------
@@ -401,7 +432,7 @@ size_t Engine::build_net_text(uint8_t* p, const NetInfo& n) const {
 }
 
 // ---- answer selection -----------------------------------------------------------------------------------------
-// Priority: handshake > user write > start-up step > network write > status read > idle ack.
+// Priority: handshake > user write > start-up step > read-back of a write > network write > status read > idle ack.
 size_t Engine::build_answer() {
   inflight_ = Inflight::None;
   ans_len_ = 0;
@@ -446,6 +477,17 @@ size_t Engine::build_answer() {
     if (n) return ans_len_ = n;
   }
 
+  auto status_read = [&]() {
+    n = lb::build_read_request(STATUS_LIST, STATUS_COUNT, o, cap);
+    if (n) inflight_ = Inflight::Status;
+    return ans_len_ = n;
+  };
+  // The read-back of a write must not queue behind the network record (several messages right after start-up or an
+  // IP change): the write's 3 s confirm window is already running.
+  if (phase_ == Phase::Running && await_ == Await::None && confirm_.active && read_due_) {
+    if (status_read()) return ans_len_;
+  }
+
   if (phase_ == Phase::Running && net_enabled_ && net_.connected) {
     uint8_t p[64];
     if (net_step_ == N_STATE3 || net_step_ == N_STATE4 || net_step_ == N_STATE5 ||
@@ -475,10 +517,7 @@ size_t Engine::build_answer() {
 
   if (phase_ == Phase::Running && await_ == Await::None) {
     bool periodic = !read_ever_ || now_ - last_read_sent_ >= ms_to_us(status_period_ms_);
-    if (read_due_ || periodic) {
-      n = lb::build_read_request(STATUS_LIST, STATUS_COUNT, o, cap);
-      if (n) { inflight_ = Inflight::Status; return ans_len_ = n; }
-    }
+    if ((read_due_ || periodic) && status_read()) return ans_len_;
   }
 
   n = lb::build_idle(o, cap);

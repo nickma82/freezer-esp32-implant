@@ -286,6 +286,12 @@ void FreezerBusComponent::log_changes_(const BusSnapshot &s, bool ok) {
   const BusSnapshot &o = this->prev_;
   if (!this->have_snap_) return;
   if (s.phase != o.phase) ESP_LOGI(TAG, "phase: %s -> %s", phase_name(o.phase), phase_name(s.phase));
+  if (o.phase == n02::Phase::Waiting && s.phase == n02::Phase::Startup)
+    ESP_LOGI(TAG, "no hello from the freezer for %u s: start-up reads without handshake (rejoin)",
+             (unsigned) (n02::REJOIN_AFTER_MS / 1000));
+  if (o.phase == n02::Phase::Startup && s.phase == n02::Phase::Waiting)
+    ESP_LOGW(TAG, "rejoin failed: the freezer answered no start-up read, next try in %u s",
+             (unsigned) (n02::REJOIN_AFTER_MS / 1000));
   if (s.alive != o.alive) ESP_LOGI(TAG, "bus %s", s.alive ? "alive" : "lost (no slot 02 for 2 s)");
   if (s.tx_enabled != o.tx_enabled)
     ESP_LOGI(TAG, "bus transmit %s%s%s", s.tx_enabled ? "enabled" : "disabled", s.tx_off_reason[0] ? ": " : "",

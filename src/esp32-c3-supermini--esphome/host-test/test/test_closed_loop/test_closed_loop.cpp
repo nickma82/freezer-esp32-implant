@@ -50,6 +50,8 @@ struct Loop {
     m.restart_handshake();
   }
   bool running() { return e.phase() == Phase::Running; }
+  // The C3 reboots: a fresh engine (Wi-Fi up again), the master keeps running.
+  void restart_c3() { e = Engine(); net(); }
   void net(bool conn = true) {
     const uint8_t ip[4] = {192, 168, 1, 100}, mac[6] = {0x00, 0x1D, 0x63, 0x12, 0x34, 0x56};
     e.set_network(conn, ip, "Example_Wifi", mac);
@@ -139,6 +141,7 @@ void test_network_writes_off_writes_nothing() {
 }
 
 void test_setpoint_write_changes_master_and_is_confirmed() {
+  L->net();
   TEST_ASSERT_TRUE(L->run_until([] { return L->running(); }, 60000));
   TEST_ASSERT_EQUAL((int)Result::Accepted, (int)L->e.request_setpoint(-17));
   WriteResult r;
@@ -233,6 +236,31 @@ void test_flag_00_from_the_freezer_means_unknown() {
   TEST_ASSERT_EQUAL(0, L->e.state().power_fail_temp.v);
 }
 
+// The C3 restarts (OTA, watchdog, power) while the freezer keeps running: no hello comes. After 30 s the engine does
+// the start-up reads without the handshake, and the freezer (emulator core) answers them.
+void test_c3_restart_rejoins_without_hello() {
+  L->net();
+  TEST_ASSERT_TRUE(L->run_until([] { return L->running(); }, 60000));
+  L->restart_c3();
+  L->run_ms(25000);
+  TEST_ASSERT_EQUAL((int)Phase::Waiting, (int)L->e.phase());
+  TEST_ASSERT_FALSE(L->e.state().temperature.known);
+  TEST_ASSERT_TRUE(L->run_until([] { return L->running(); }, 30000));
+  TEST_ASSERT_EQUAL_UINT32(1, L->m.stats().hellos);  // the freezer never sent another hello
+  TEST_ASSERT_EQUAL_UINT32(0, L->e.counters().hellos);
+  TEST_ASSERT_EQUAL_UINT32(1, L->e.counters().rejoins);
+  const State& s = L->e.state();
+  TEST_ASSERT_EQUAL_STRING("TOD 5-600|SW 1-86-7|BUS 1-4-0", s.freezer_version);
+  TEST_ASSERT_EQUAL_STRING("FNc    5076", s.model);
+  TEST_ASSERT_TRUE(s.temperature.known && s.setpoint.known);
+  TEST_ASSERT_EQUAL(-18, s.setpoint.v);
+  WriteResult r;
+  TEST_ASSERT_EQUAL((int)Result::Accepted, (int)L->e.request_setpoint(-20));
+  TEST_ASSERT_TRUE(L->result(r));
+  TEST_ASSERT_EQUAL((int)WriteOutcome::Confirmed, (int)r.outcome);
+  TEST_ASSERT_EQUAL(-20, param_int8(L->m, 0x0C, 0x06, 0x40));
+}
+
 void test_master_restart_redoes_startup() {
   L->net();
   TEST_ASSERT_TRUE(L->run_until([] { return L->running(); }, 60000));
@@ -307,6 +335,7 @@ int main() {
   RUN_TEST(test_event_triggers_reread_temperature);
   RUN_TEST(test_power_failure_alarm);
   RUN_TEST(test_flag_00_from_the_freezer_means_unknown);
+  RUN_TEST(test_c3_restart_rejoins_without_hello);
   RUN_TEST(test_master_restart_redoes_startup);
   RUN_TEST(test_restart_during_queued_write_drops_it);
   RUN_TEST(test_long_outage_then_restart);

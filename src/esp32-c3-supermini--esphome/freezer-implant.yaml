@@ -93,6 +93,12 @@ binary_sensor:
     bus_connected:
       name: "Bus connected"
 
+# reboots only the C3; the freezer keeps running, the implant rejoins after ~30 s (also used by the testbench)
+button:
+  - platform: restart
+    name: "Restart"
+    entity_category: diagnostic
+
 text_sensor:
   - platform: freezer_bus
     freezer_version:
