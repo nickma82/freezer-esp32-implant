@@ -37,6 +37,9 @@ inline TickType_t ms_ticks(uint32_t ms) {
 // push-pull output for a moment. Here the order is: level 1 (released in open-drain), input+output-open-drain, then
 // connect UART1 TX/RX, then open-drain asserted once more. The pin is never a push-pull output. Pulls stay off: the
 // pull-up is external (freezer / emulator).
+// gpio_set_direction() must not come after the TX connection: it calls gpio_output_enable(), which routes the pad back
+// to "simple GPIO output" and cuts UART TX off (bench 2026-11-17: C3 received fine but never drove the bus).
+// esp_rom_gpio_connect_out_signal() enables the output itself and leaves the pad's open-drain bit (set above) alone.
 bool BusC3::route_pin() {
   const gpio_num_t p = (gpio_num_t) this->pin_;
   esp_rom_gpio_pad_select_gpio(p);
@@ -45,7 +48,7 @@ bool BusC3::route_pin() {
   if (gpio_set_direction(p, GPIO_MODE_INPUT_OUTPUT_OD) != ESP_OK) return false;
   esp_rom_gpio_connect_out_signal(p, U1TXD_OUT_IDX, false, false);
   esp_rom_gpio_connect_in_signal(p, U1RXD_IN_IDX, false);
-  return gpio_set_direction(p, GPIO_MODE_INPUT_OUTPUT_OD) == ESP_OK;
+  return true;
 }
 
 bool BusC3::start() {
