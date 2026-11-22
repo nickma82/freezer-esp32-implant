@@ -59,7 +59,7 @@ void FreezerSwitch::write_state(bool state) { this->parent_->command_switch(this
 void FreezerNumber::control(float value) { this->parent_->command_setpoint((int) lroundf(value)); }
 #endif
 #ifdef USE_SELECT
-void FreezerSelect::control(size_t index) { this->parent_->command_setpoint(SETPOINT_MIN_C + (int) index); }
+void FreezerSelect::control(size_t index) { this->parent_->command_setpoint(this->min_c_ + (int) index); }
 
 void FreezerSelect::publish_unknown() {
   this->set_has_state(false);
@@ -72,7 +72,8 @@ void FreezerSelect::publish_unknown() {
 // ---------------------------------------------------------------------------------------------------------------
 
 void FreezerBusComponent::setup() {
-  this->bus_.configure(this->bus_pin_, this->reply_delay_us_, this->status_interval_ms_, this->network_writes_);
+  this->bus_.configure(this->bus_pin_, this->reply_delay_us_, this->status_interval_ms_, this->network_writes_,
+                       this->setpoint_min_, this->setpoint_max_);
   if (!this->bus_.start()) {
     ESP_LOGE(TAG, "bus driver failed to start (GPIO%u)", this->bus_pin_);
     this->mark_failed();
@@ -87,9 +88,10 @@ void FreezerBusComponent::dump_config() {
                 "  Bus pin: GPIO%u (open-drain, UART1, 57600 8N1)\n"
                 "  Reply delay: %u us (window 250..600)\n"
                 "  Status interval: %u ms\n"
-                "  Network writes (group 48): %s",
+                "  Network writes (group 48): %s\n"
+                "  Set-point range: %d..%d degC",
                 this->bus_pin_, (unsigned) this->reply_delay_us_, (unsigned) this->status_interval_ms_,
-                YESNO(this->network_writes_));
+                YESNO(this->network_writes_), this->setpoint_min_, this->setpoint_max_);
 #ifdef USE_SWITCH
   LOG_SWITCH("  ", "SuperFrost", this->sw_superfrost_);
   LOG_SWITCH("  ", "Party", this->sw_party_);
@@ -439,7 +441,7 @@ void FreezerBusComponent::publish_(const BusSnapshot &s, bool force) {
       this->l_setpoint_sel_.valid = true;
       this->l_setpoint_sel_.v = v;
       // a value outside the options (set at the freezer's own panel beyond -28..-15?) shows as unknown, never wrong
-      const int index = v - FreezerSelect::SETPOINT_MIN_C;
+      const int index = v - this->sel_setpoint_->min_c();
       if (v != SETPOINT_UNKNOWN && index >= 0 && this->sel_setpoint_->has_index((size_t) index))
         this->sel_setpoint_->publish_degc(v);
       else

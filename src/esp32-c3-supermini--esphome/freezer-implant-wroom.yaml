@@ -1,0 +1,135 @@
+# Freezer implant: bare ESP32-WROOM-32 module (classic ESP32) acting as bus node 02.
+# Same component and entities as freezer-implant.yaml (ESP32-C3 SuperMini); only the board part differs.
+# Build: CONFIG=freezer-implant-wroom.yaml just build. Wiring and flashing: WIRING.md, section "ESP32-WROOM-32".
+substitutions:
+  # one GPIO for bus TX+RX; rejected: 0/2/5/12/15 (straps), 1/3 (UART0), 6-11 (flash), 34-39 (input-only).
+  # WROVER modules use GPIO16/17 for PSRAM: pick other pins there.
+  # override without editing: esphome -s bus_pin GPIO4 compile freezer-implant-wroom.yaml
+  bus_pin: GPIO16
+  # holds the EN pin of the freezer's onboard Wi-Fi low (newer freezers have Wi-Fi on their own board); harmless when
+  # the pad is not connected
+  factory_wifi_en_pin: GPIO17
+
+esphome:
+  name: freezer-implant-wroom
+
+esp32:
+  board: esp32dev
+  variant: esp32
+  framework:
+    type: esp-idf
+
+# UART0 (TX on GPIO1) through the USB-UART adapter used for flashing; later also over Wi-Fi (just logs)
+logger:
+  # a tag may only be quieted below the global level, so the global level is DEBUG
+  level: DEBUG
+  logs:
+    component: INFO
+    wifi: INFO
+    api: INFO
+    esp-idf: INFO
+    # freezer stays at DEBUG; set it to INFO to quiet the bus logging
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # the module's PCB antenna needs no reduced output_power (unlike the SuperMini)
+  ap:  # fallback hotspot if the Wi-Fi is unreachable
+    ssid: "freezer-implant"
+    password: !secret ota_password
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [freezer_bus]
+
+freezer_bus:
+  id: bus
+  bus_pin: ${bus_pin}  # TX+RX open-drain on UART1, 100 ohm series resistor
+  # reply_delay_us: 420      # first answer byte this long after the slot byte (250..600)
+  # status_interval: 10s     # periodic read of the freezer state
+  # network_writes: true     # write IP/SSID/MAC to the freezer like the original box (group 48)
+  # set-point range in degC (select options, number limits); the default -28..-15 fits a freezer, this is a fridge's
+  setpoint_min: 3
+  setpoint_max: 9
+
+switch:
+  - platform: freezer_bus
+    superfrost:
+      name: "SuperFrost"
+    party:
+      name: "Party mode"
+    bus_transmit:
+      name: "Bus transmit"
+  # Freezer's onboard Wi-Fi disabled: open-drain, so "off" pulls its EN low and the module never drives the line high.
+  # Only from setup() on: during reset, flashing and safe mode the pin floats, so the board needs a pull-down on EN.
+  - platform: gpio
+    id: factory_wifi_enable
+    pin:
+      number: ${factory_wifi_en_pin}
+      mode:
+        output: true
+        open_drain: true
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+# set-point as a dropdown, one option per degC of freezer_bus: setpoint_min..setpoint_max (default -28..-15);
+# the freezer_bus number platform (setpoint) is the alternative
+select:
+  - platform: freezer_bus
+    setpoint:
+      name: "Set-point"
+
+sensor:
+  - platform: freezer_bus
+    temperature:
+      name: "Temperature"
+    power_fail_temperature:
+      name: "Power-failure temperature"
+    latency_median:
+      name: "Reply latency median"
+    latency_max:
+      name: "Reply latency max"
+    crc_errors:
+      name: "CRC errors"
+    echo_mismatches:
+      name: "Echo mismatches"
+    missed_slots:
+      name: "Missed slots"
+
+binary_sensor:
+  - platform: freezer_bus
+    door:
+      name: "Door"
+    door_alarm:
+      name: "Door alarm"
+    power_fail_alarm:
+      name: "Power-failure alarm"
+    bus_connected:
+      name: "Bus connected"
+
+# reboots only the module; the freezer keeps running, the implant rejoins after ~30 s (also used by the testbench)
+button:
+  - platform: restart
+    name: "Restart"
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: freezer_bus
+    freezer_version:
+      name: "Freezer version"
+    node01_version:
+      name: "Node 01 version"
+    model:
+      name: "Model"
+    phase:
+      name: "Start-up phase"

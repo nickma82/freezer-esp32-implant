@@ -17,6 +17,9 @@ docs/original-smartdevice-box/Screenshot_20261101_212319.png
 .pio/
 .pio.*/
 
+# local Python env (ESPHome), with its own pip cache and HOME inside
+.venv/
+
 # ESPHome: real credentials never go into git (use secrets.yaml.example)
 **/secrets.yaml
 **/.esphome/

@@ -336,7 +336,7 @@ Result Engine::request_party(bool on) {
 }
 
 Result Engine::request_setpoint(int degc) {
-  if (degc < -28 || degc > -15) return Result::RefusedRange;
+  if (degc < setpoint_min_ || degc > setpoint_max_) return Result::RefusedRange;
   return queue_write(UserWrite{WriteParam::Setpoint, 0x0C, 0x06, 0x40, (uint32_t)(uint8_t)(int8_t)degc, degc, degc});
 }
 

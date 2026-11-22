@@ -1,12 +1,15 @@
-# ESPHome implant for the ESP32-C3 SuperMini (bus node 02). `just` lists the recipes.
+# ESPHome implant (bus node 02) for the ESP32-C3 SuperMini, or a bare ESP32-WROOM-32 with
+# CONFIG=freezer-implant-wroom.yaml. `just` lists the recipes.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # pinned ESPHome release (newest one at least two weeks old, 2026.10.0 uploaded 2026-10-21)
 esphome_version := "2026.10.0"
 esphome := "uvx --from esphome==" + esphome_version + " esphome"
-config := "freezer-implant.yaml"
-name := "freezer-implant"
+# board config: freezer-implant.yaml (ESP32-C3 SuperMini, default) or freezer-implant-wroom.yaml (ESP32-WROOM-32)
+config := env_var_or_default("CONFIG", "freezer-implant.yaml")
+# each config's esphome name equals its file name, so the build dir follows the config
+name := file_stem(config)
 # empty PORT = let ESPHome pick (USB serial or OTA)
 port := env_var_or_default("PORT", "")
 
@@ -36,7 +39,7 @@ config:
 build:
     {{esphome}} compile {{config}}
 
-# flash over USB (native USB-Serial/JTAG); PORT=/dev/ttyACM0 to pick the port
+# flash over USB (C3: native USB-Serial/JTAG, WROOM: USB-UART adapter) or OTA; PORT=/dev/ttyACM0 to pick the port
 flash:
     #!/usr/bin/env bash
     set -euo pipefail
