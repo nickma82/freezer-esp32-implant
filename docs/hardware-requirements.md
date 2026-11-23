@@ -64,6 +64,7 @@ a LIN checksum. Because it is plain UART plus break, every ESP32 variant can spe
 | Seeed XIAO ESP32-C6 | ~21 x 17.8 | IPEX connector | same footprint, Wi-Fi 6 + 802.15.4 |
 | ESP32-C3-DevKitM-1 | ~25 x 55 | PCB antenna | official, reliable, too large for installation |
 | ESP32-C3-MINI-1U / C6-MINI-1U (bare module) | 13.2 x 12.5 | IPEX | **final unit** on a custom PCB |
+| [ESP32-WROOM-32](dev-boards/esp32-wroom-32/README.md) (bare module, classic ESP32) | 18 x 25.5 | PCB antenna (`-32UE`: IPEX) | supported by the implant firmware (`freezer-implant-wroom.yaml`); larger and dual-core, but common and all parts rated -40 C |
 
 ## Recommendation
 

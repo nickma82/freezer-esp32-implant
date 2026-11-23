@@ -124,7 +124,7 @@ class Engine {
   // ---- commands (they only queue; the entity changes when the read-back arrives) -------------------------------
   Result request_superfrost(bool on);
   Result request_party(bool on);
-  Result request_setpoint(int degc);  // -28..-15 inclusive, else RefusedRange
+  Result request_setpoint(int degc);  // setpoint_min..setpoint_max inclusive (default -28..-15), else RefusedRange
   Result set_tx_enabled(bool on);     // false: nothing is answered and queued writes are dropped (NotSent). Always Accepted.
   bool tx_enabled() const { return tx_enabled_; }
 
@@ -133,6 +133,8 @@ class Engine {
   void set_network(bool connected, const uint8_t ip[4], const char* ssid, const uint8_t mac[6]);
   void set_network_writes_enabled(bool on);  // default on; off = no group 48 (or 4C) write at all
   void set_status_period_ms(uint32_t ms) { status_period_ms_ = ms; }
+  // accepted set-point range in degC (0C/06 is an int8): a freezer -28..-15 (default), a fridge e.g. positive values
+  void set_setpoint_range(int min_c, int max_c) { setpoint_min_ = min_c; setpoint_max_ = max_c; }
 
   // ---- state ---------------------------------------------------------------------------------------------
   const State& state() const { return st_; }
@@ -194,6 +196,8 @@ class Engine {
   uint64_t now_ = 0;
   bool tx_enabled_ = true;
   uint32_t status_period_ms_ = DEFAULT_STATUS_PERIOD_MS;
+  int setpoint_min_ = -28;
+  int setpoint_max_ = -15;
 
   // bus alive
   bool seen02_ = false;

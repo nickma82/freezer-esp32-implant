@@ -75,3 +75,56 @@ Emulator side exactly as in `../../protocol-decoding/esp-freezer-emulator-poc/WI
 - GPIO3 is high-Z through reset, boot and flash, and the firmware only ever sets it open-drain, never push-pull.
   Reset/flash while attached is safe by design, but verify once on the analyzer (bench task 7.7).
 - The `BOOT` button is on IO9, not on the bus pin, so pressing it does not touch the bus; it only matters at reset (download mode).
+
+## ESP32-WROOM-32
+
+A bare ESP32-WROOM-32 module (classic ESP32, `freezer-implant-wroom.yaml`) in place of the SuperMini. The bus side is
+the same as above: one GPIO through **100 Ω** to the bus, common GND, pads 1 and 3 of the freezer never connected, the
+pull-up from the bus side. Status: **bus on GPIO16 running on a Liebherr `RBsdc 525i` (2026-11-22)**; module pin numbers are from the Espressif datasheet,
+check them against your module (`../../docs/dev-boards/esp32-wroom-32/README.md`).
+
+```
+ Bus (freezer pad 2 / bench net)          ESP32-WROOM-32 module
+ ───────────────────────────────          ─────────────────────
+  pad 2 (BUS) ──┬──[ 100 Ω ]────────────── IO16 (module pin 27)   UART1 TX+RX, open-drain
+                └── Logic analyzer CH0
+  GND ──────────┬── Logic analyzer GND
+                └──────────────────────── GND (pins 1, 15, 38)
+
+ Freezer's onboard Wi-Fi (newer freezers only)
+  its EN ──┬───────────────────────────── IO17 (module pin 28)   held low, open-drain
+           └─[ pull-down ]── GND                                  keeps it off while IO17 floats (reset, flashing,
+                                                                  safe mode); stronger than that EN's own pull-up
+
+ 3.3 V supply (>= 500 mA) ───┬──────────── 3V3 (pin 2), 10 µF + 100 nF close to the pin
+                             ├─[ 10 kΩ ]── EN (pin 3) ──[ 1 µF ]── GND    power-on reset delay
+                             └─[ 10 kΩ ]── IO0 (pin 25)                   normal boot; low at reset = download
+
+ USB-UART adapter (3.3 V)
+  TX ───────────────────────────────────── RXD0 / IO3 (pin 34)
+  RX ───────────────────────────────────── TXD0 / IO1 (pin 35)    console and ROM log
+  GND ──────────────────────────────────── GND
+  (optional: DTR/RTS auto-reset circuit to EN and IO0, as on dev boards)
+```
+
+| Module pin | Connect to | Why |
+|---|---|---|
+| IO16 (27) | bus through **100 Ω** | the default `bus_pin`; any other GPIO the schema accepts works (`substitutions: bus_pin`) |
+| IO17 (28) | EN of the freezer's onboard Wi-Fi, plus a pull-down to GND | only on freezers with Wi-Fi on their own board; otherwise leave it open. Keeps the freezer off the vendor cloud, so nobody can change its settings from there (e.g. holiday mode). The pull-down is the part that holds it off whenever the module does not (unpowered, reset, flashing, safe mode); it must win against that EN's own pull-up (e.g. 1 kΩ against 10 kΩ) |
+| GND (1, 15, 38) | bus GND, analyzer GND, adapter GND | common reference |
+| 3V3 (2) | 3.3 V, at least 500 mA, with decoupling | Wi-Fi TX peaks; supply from the freezer still open (H12) |
+| EN (3) | 10 kΩ to 3V3, 1 µF to GND | the chip starts only after its supply is stable |
+| IO0 (25) | 10 kΩ to 3V3, a button or jumper to GND for flashing | strap: low at reset = download mode |
+| TXD0 / RXD0 (35 / 34) | USB-UART adapter | flashing and the log; never the bus |
+
+Leave unconnected or only pulled as the module expects: IO2 (strap, must not be high when flashing), IO12 (strap: high at
+reset selects 1.8 V flash and the module does not boot), IO5 and IO15 (straps), the flash pins SD0-SD3/CMD/CLK
+(module pins 17-22, GPIO6-11). IO34-IO39 are input-only and cannot carry the bus.
+
+Flashing: hold IO0 low, pulse EN low, release IO0, then `CONFIG=freezer-implant-wroom.yaml PORT=/dev/ttyUSB0 just flash`.
+Updates after that go over Wi-Fi. The bus pin is high-Z through reset and download mode, as on the C3; the firmware
+only ever sets it open-drain. Verify once on the analyzer that reset and flashing leave the bus alone (as bench task 7.7).
+
+Bench with the NodeMCU freezer emulator: wire as in the SuperMini bench section, with the module's bus pin in place of
+SuperMini pad `3`. The emulator's port is `/dev/ttyUSB0` by default, and the module's USB-UART adapter is likely
+`/dev/ttyUSB*` as well: set `EMU_PORT` for the testbench and `PORT` for `just` explicitly.

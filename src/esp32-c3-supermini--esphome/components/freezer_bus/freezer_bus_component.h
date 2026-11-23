@@ -59,19 +59,21 @@ class FreezerNumber : public number::Number {
 #endif
 
 #ifdef USE_SELECT
-// Set-point as a dropdown: option index i = SETPOINT_MIN_C + i degC (the options come from select.py).
-// control() only enqueues the write; the selection follows the freezer's read-back.
+// Set-point as a dropdown: option index i = min_c + i degC (the options and min_c come from select.py, i.e. from
+// freezer_bus: setpoint_min/setpoint_max). control() only enqueues the write; the selection follows the read-back.
 class FreezerSelect : public select::Select {
  public:
-  static constexpr int SETPOINT_MIN_C = -28;
   void set_parent(FreezerBusComponent *p) { this->parent_ = p; }
-  void publish_degc(int degc) { this->publish_state((size_t) (degc - SETPOINT_MIN_C)); }
+  void set_min_c(int c) { this->min_c_ = c; }
+  int min_c() const { return this->min_c_; }
+  void publish_degc(int degc) { this->publish_state((size_t) (degc - this->min_c_)); }
   // Select::publish_state() cannot express "unknown"; Home Assistant shows unknown for missing_state
   void publish_unknown();
 
  protected:
   void control(size_t index) override;
   FreezerBusComponent *parent_{nullptr};
+  int min_c_{-28};
 };
 #endif
 
@@ -81,6 +83,10 @@ class FreezerBusComponent : public Component {
   void set_reply_delay_us(uint32_t us) { this->reply_delay_us_ = us; }
   void set_status_interval_ms(uint32_t ms) { this->status_interval_ms_ = ms; }
   void set_network_writes(bool on) { this->network_writes_ = on; }
+  void set_setpoint_range(int min_c, int max_c) {
+    this->setpoint_min_ = min_c;
+    this->setpoint_max_ = max_c;
+  }
 
 #ifdef USE_SWITCH
   void set_superfrost_switch(FreezerSwitch *s) { this->sw_superfrost_ = s; }
@@ -142,6 +148,8 @@ class FreezerBusComponent : public Component {
   uint32_t reply_delay_us_{420};
   uint32_t status_interval_ms_{10000};
   bool network_writes_{true};
+  int setpoint_min_{-28};
+  int setpoint_max_{-15};
 
   BusC3 bus_;
   uint32_t seen_seq_{0};

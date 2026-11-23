@@ -1,4 +1,5 @@
-// ESP32-C3 bus driver (ESP-IDF only): UART1 on one open-drain pin, BREAK framing, slot-02 reply path, echo check.
+// ESP32-C3 / classic ESP32 bus driver (ESP-IDF only): UART1 on one open-drain pin, BREAK framing, slot-02 reply path,
+// echo check.
 //
 // Compiled only for ESP-IDF builds, so the host tests (which build node02_engine.cpp alone) are not affected.
 // Spec: openspec/changes/esphome-c3-implant/specs/c3-bus-driver/spec.md, design D2/D4/D5.
@@ -78,13 +79,15 @@ struct LogFrame {
 
 class BusC3 {
  public:
-  void configure(uint8_t pin, uint32_t reply_delay_us, uint32_t status_period_ms, bool network_writes) {
+  void configure(uint8_t pin, uint32_t reply_delay_us, uint32_t status_period_ms, bool network_writes, int setpoint_min,
+                 int setpoint_max) {
     this->pin_ = pin;
     this->reply_delay_us_ = reply_delay_us < REPLY_DELAY_MIN_US ? REPLY_DELAY_MIN_US
                             : reply_delay_us > REPLY_DELAY_MAX_US ? REPLY_DELAY_MAX_US
                                                                    : reply_delay_us;
     this->engine_.set_status_period_ms(status_period_ms);
     this->engine_.set_network_writes_enabled(network_writes);
+    this->engine_.set_setpoint_range(setpoint_min, setpoint_max);
   }
   // Configures UART1 + the pin (open-drain only, never push-pull) and starts the bus task. False on failure.
   bool start();
@@ -109,6 +112,7 @@ class BusC3 {
   void echo_byte(uint8_t b);
   void echo_mismatch(uint8_t reason, uint16_t idx, uint16_t expected, uint16_t got);
   void abort_tx();
+  void reattach_tx();
   void drain_commands();
   void refresh_answer(uint64_t now);
   void publish_snapshot(uint64_t now);
@@ -144,6 +148,7 @@ class BusC3 {
   size_t tx_echoed_ = 0;
   bool tx_active_ = false;      // answer on the wire, echo not complete yet
   bool tx_aborted_ = false;     // this slot's transmission was aborted (mismatch)
+  bool tx_detached_ = false;    // classic ESP32: pad cut off from U1TXD by abort_tx(), until the UART has gone idle
   uint64_t tx_t_start_ = 0;
   bool need_refresh_ = true;
   uint64_t last_tick_ = 0;

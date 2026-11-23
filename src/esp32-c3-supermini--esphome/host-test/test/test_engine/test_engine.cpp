@@ -286,6 +286,24 @@ void test_write_bodies_byte_identical() {
   send_and_expect(*B, "FF 02 24 01 05 0C 06 40 00 F1 27 6A");
 }
 
+// A configured range (here a fridge, +2..+9 degC) replaces the freezer default -28..-15 for requests and writes.
+void test_configured_setpoint_range() {
+  B->e.set_setpoint_range(2, 9);
+  B->to_running();
+  settle(*B, 1, 0, 4);
+  TEST_ASSERT_EQUAL((int)Result::RefusedRange, (int)B->e.request_setpoint(1));
+  TEST_ASSERT_EQUAL((int)Result::RefusedRange, (int)B->e.request_setpoint(10));
+  TEST_ASSERT_EQUAL((int)Result::RefusedRange, (int)B->e.request_setpoint(-18));  // the freezer default no longer applies
+  TEST_ASSERT_EQUAL((int)Result::Accepted, (int)B->e.request_setpoint(5));
+  send_and_expect(*B, "FF 02 24 01 05 0C 06 40 00 05 BC C5");
+  settle(*B, 1, 0, 5);
+  TEST_ASSERT_EQUAL((int)Result::Accepted, (int)B->e.request_setpoint(2));
+  send_and_expect(*B, "FF 02 24 01 05 0C 06 40 00 02 5B B5");
+  settle(*B, 1, 0, 2);
+  TEST_ASSERT_EQUAL((int)Result::Accepted, (int)B->e.request_setpoint(9));
+  send_and_expect(*B, "FF 02 24 01 05 0C 06 40 00 09 30 04");
+}
+
 void test_refusals() {
   // not running (before / during the handshake)
   TEST_ASSERT_EQUAL((int)Result::RefusedNotRunning, (int)B->e.request_superfrost(true));
@@ -642,6 +660,7 @@ int main() {
   RUN_TEST(test_node0b_door_push);
   RUN_TEST(test_crc_errors_counted_and_ignored);
   RUN_TEST(test_write_bodies_byte_identical);
+  RUN_TEST(test_configured_setpoint_range);
   RUN_TEST(test_refusals);
   RUN_TEST(test_queue_full_and_order);
   RUN_TEST(test_write_queues_behind_handshake_and_dropped_on_tx_off);

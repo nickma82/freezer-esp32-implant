@@ -6,14 +6,10 @@ from . import (
     CONF_FREEZER_BUS_ID,
     FREEZER_BUS_CHILD_SCHEMA,
     freezer_bus_ns,
+    setpoint_range,
 )
 
 CONF_SETPOINT = "setpoint"
-
-# the freezer accepts -28..-15 degC in 1 degC steps (spec ha-freezer-entities); keep in sync with SETPOINT_MIN_C/MAX_C
-SETPOINT_MIN_C = -28
-SETPOINT_MAX_C = -15
-SETPOINT_OPTIONS = [f"{c} °C" for c in range(SETPOINT_MIN_C, SETPOINT_MAX_C + 1)]
 
 FreezerSelect = freezer_bus_ns.class_("FreezerSelect", select.Select)
 
@@ -30,7 +26,10 @@ CONFIG_SCHEMA = FREEZER_BUS_CHILD_SCHEMA.extend(
 async def to_code(config):
     parent = await cg.get_variable(config[CONF_FREEZER_BUS_ID])
     if conf := config.get(CONF_SETPOINT):
-        # option index i = SETPOINT_MIN_C + i degC (FreezerSelect::control / publish)
-        var = await select.new_select(conf, options=SETPOINT_OPTIONS)
+        # one option per degC in freezer_bus: setpoint_min..setpoint_max (default -28..-15);
+        # option index i = setpoint_min + i degC (FreezerSelect::control / publish)
+        lo, hi = setpoint_range()
+        var = await select.new_select(conf, options=[f"{c} °C" for c in range(lo, hi + 1)])
+        cg.add(var.set_min_c(lo))
         cg.add(var.set_parent(parent))
         cg.add(parent.set_setpoint_select(var))

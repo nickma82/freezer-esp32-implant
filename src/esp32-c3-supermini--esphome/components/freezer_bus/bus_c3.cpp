@@ -73,8 +73,15 @@ bool BusC3::start() {
   xQueueReset(this->uart_q_);
 
   this->snap_ = BusSnapshot();
+#if CONFIG_FREERTOS_UNICORE
   return xTaskCreate(&BusC3::task_trampoline, "freezer_bus", 6144, this, configMAX_PRIORITIES - 2, &this->task_) ==
          pdPASS;
+#else
+  // dual core (classic ESP32): core 1, next to ESPHome's loop task. setup() runs there, so the UART interrupt installed
+  // above is on core 1 too, and Wi-Fi stays alone on core 0.
+  return xTaskCreatePinnedToCore(&BusC3::task_trampoline, "freezer_bus", 6144, this, configMAX_PRIORITIES - 2,
+                                 &this->task_, 1) == pdPASS;
+#endif
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -122,6 +129,7 @@ void BusC3::task_main() {
       if (now - this->tx_t_start_ > (uint64_t) this->tx_len_ * BYTE_US + 4000) this->echo_mismatch(1, (uint16_t) this->tx_echoed_, 0xFFFF, 0xFFFF);
       continue;  // commands and ticks wait: the engine must keep the offered message until the echo is judged
     }
+    if (this->tx_detached_) this->reattach_tx();
     this->drain_commands();
     if (now - this->last_tick_ >= TICK_US) {
       this->engine_.tick(now);
@@ -203,7 +211,7 @@ void BusC3::on_overflow() {
 // before the BREAK event, so it sits at the end of the previous slot's bytes and is removed here. A FRAME_ERR is not
 // reliably reported before the BREAK (bench 2026-11-17: never), so it is not required. A legitimate trailing 00 of a
 // frame survives, since only the one extra 00 is dropped. If the 00 arrives late instead, zero_pending_ drops it as the
-// first byte.
+// first byte. Classic ESP32: the order is not measured yet; either order is handled.
 void BusC3::finish_frame() {
   bool stripped = false;
   if (this->in_slot_ && this->cur_n_ >= 2 && this->cur_[this->cur_n_ - 1] == 0x00) {
@@ -251,7 +259,8 @@ void BusC3::on_break() {
 void BusC3::reply_to_slot02(uint64_t t) {
   if (!this->engine_.tx_enabled() || this->ans_n_ == 0) return;  // slot 02 stays empty
   uint64_t now = now_us();
-  if (now > t + REPLY_DELAY_MAX_US) {  // woke too late: never answer late
+  // still detached after an abort (the old answer is still draining inside the UART): this slot stays empty
+  if (this->tx_detached_ || now > t + REPLY_DELAY_MAX_US) {  // or woke too late: never answer late
     this->missed_slots_++;
     this->stats_dirty_ = true;
     this->engine_.on_slot02_result(false);
@@ -293,8 +302,27 @@ void BusC3::echo_byte(uint8_t b) {
 }
 
 void BusC3::abort_tx() {
+#if CONFIG_IDF_TARGET_ESP32
+  // The classic ESP32 cannot reset UART1's TX FIFO (uart_ll_txfifo_rst() is a no-op there, hardware issue). Instead the
+  // pad is cut off from U1TXD in the GPIO matrix and driven by its GPIO output register, which holds 1 (released in
+  // open-drain, set in route_pin()): the bus is free at once, even mid-byte. The UART keeps shifting the rest of the
+  // answer out into nothing; reattach_tx() reconnects the pad once it is idle.
+  const gpio_num_t p = (gpio_num_t) this->pin_;
+  gpio_set_level(p, 1);
+  esp_rom_gpio_connect_out_signal(p, SIG_GPIO_OUT_IDX, false, false);
+  this->tx_detached_ = true;
+#else
   // drop what is still queued in the TX FIFO; a byte already shifting out finishes (<= 174 us)
   uart_ll_txfifo_rst(UART_LL_GET_HW(BUS_UART));
+#endif
+}
+
+// Classic ESP32 only (tx_detached_ is never set elsewhere): give the pad back to U1TXD once the UART has sent the rest of
+// the aborted answer. The idle UART holds its TX line high, so the switch causes no low pulse.
+void BusC3::reattach_tx() {
+  if (!uart_ll_is_tx_idle(UART_LL_GET_HW(BUS_UART))) return;
+  esp_rom_gpio_connect_out_signal((gpio_num_t) this->pin_, U1TXD_OUT_IDX, false, false);
+  this->tx_detached_ = false;
 }
 
 void BusC3::echo_mismatch(uint8_t reason, uint16_t idx, uint16_t expected, uint16_t got) {
